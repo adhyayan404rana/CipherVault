@@ -84,14 +84,14 @@ async function refreshTransfers(){
 function renderSummary(){const summary=$('summary');summary.replaceChildren();for(const [name,value]of [['Your transfers',transfers.length],['Verified receipts',transfers.filter(t=>t.receipt).length],['Benchmark sizes',results.benchmarks?.rows?.length||0]]){const card=document.createElement('article');card.className='card';const h=document.createElement('h2');h.textContent=String(value);card.append(h);paragraph(card,name);summary.append(card);}}
 async function initialise(){
   const value=await api('session');csrf=value.csrf;account=value.user;profile=value.profile;mode=value.mode;
-  $('auth').hidden=!!account;$('workspace').hidden=!account;if(!account)return;
+  $('auth').hidden=!!account;$('workspace').hidden=!account;if(!account)return;page('dashboard');
   $('mode').textContent=mode==='local'?'Local account demo':'Hosted account workspace';$('account-label').textContent=profile?.username||account.email;$('identity-setup').hidden=!!profile;$('my-fingerprint').textContent=profile?.fingerprint||'Create your signing identity first.';
   if(!value.ai_configured)$('ai-status').textContent='AI assistant is optional. Configure GEMINI_API_KEY on the server to enable real AI responses. All other features work without it.';
   results=(await api('results')).results;for(const [kind,value]of Object.entries(results))renderMeasurements(kind,value);renderVaultHistory();
   if(results.hash_metrics)$('hash-status').textContent='Saved hashing measurements:\n'+JSON.stringify(results.hash_metrics,null,2);
   if(results.signature_metrics)$('verify-status').textContent='Saved signature measurements:\n'+JSON.stringify(results.signature_metrics,null,2);
   try{artifacts?.close();artifacts=await openArtifacts();const saved=await artifact('encrypted');if(saved){download('encrypted-download',saved.package,saved.filename+'.cvault','Download previous encrypted package');$('encrypt-status').textContent='Restored encrypted output. Passwords and plaintext are not saved.';}}catch(error){notice(error.message,true);}
-  await refreshTransfers();page('dashboard');
+  await refreshTransfers();
 }
 const authHint=document.createElement('p');authHint.className='muted';authHint.textContent='Use 12–128 password characters. First time here? Create an account, then sign in.';$('account-password').after(authHint);
 bind('register',async()=>{notice('Creating your account…');const result=await api('register',{email:$('email').value.trim(),password:$('account-password').value});$('account-password').value='';notice(result.message+'\n'+timing('Registration',result.operation_seconds));});

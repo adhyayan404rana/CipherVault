@@ -20,13 +20,16 @@ from dashboard_style import CSS
 from analysis_ui import render_analysis
 from vault_charts import record_measurement, show_operation_graph, show_vault_comparison
 from storage_service import ResultStore
+from render_access import require_demo_access
 
 load_dotenv()
 st.set_page_config(page_title='CipherVault', page_icon='🔐', layout='wide')
+render_demo = require_demo_access()
 store = None
 try:
-    store = ResultStore()
-    store.restore(st.session_state)
+    if not render_demo:
+        store = ResultStore()
+        store.restore(st.session_state)
 except (OSError, ValueError, sqlite3.Error):
     st.warning('Saved results could not be loaded. Check local_data permissions or use Clear saved results if available.')
 
@@ -61,9 +64,12 @@ section = st.sidebar.radio('Workspace', ['Overview', 'File Encryption and Decryp
     format_func=LABELS.get, key='workspace_section', label_visibility='collapsed')
 st.sidebar.divider()
 st.sidebar.caption('AES-256-GCM · RSA-PSS')
-st.sidebar.caption('Local workspace · 20 MiB / file')
+st.sidebar.caption(('Render demonstration' if render_demo else 'Local workspace') + ' · 20 MiB / file')
+if render_demo and st.sidebar.button('Lock laboratory'):
+    st.session_state.clear()
+    st.rerun()
 with st.sidebar.expander('Saved results'):
-    st.caption('Charts and encrypted packages are saved locally. Passwords, private keys and recovered plaintext are not saved.')
+    st.caption('This hosted laboratory keeps results only in your browser session. Download outputs before refreshing. Uploaded files are processed on the Render server.' if render_demo else 'Charts and encrypted packages are saved locally. Passwords, private keys and recovered plaintext are not saved.')
     if store is not None:
         st.button('Clear saved results',on_click=store.clear,args=(st.session_state,))
 header, status_badge = st.columns([4, 1])
@@ -71,7 +77,7 @@ with header:
     st.markdown('<div class="section-kicker">CipherVault / Workspace</div>', unsafe_allow_html=True)
     st.title(LABELS[section])
 with status_badge:
-    st.markdown('<span class="status-pill">● Local workspace</span>', unsafe_allow_html=True)
+    st.markdown('<span class="status-pill">● ' + ('Render demo' if render_demo else 'Local workspace') + '</span>', unsafe_allow_html=True)
 
 
 def duration(label, seconds):
@@ -400,6 +406,11 @@ elif section == 'Hashing and Digital Signatures':
         st.caption('One experiment does not prove security or guarantee exactly 50% changed bits.')
 
 elif section == 'Device-to-Device Transfer':
+    if render_demo:
+        st.info('For transfers between accounts, use the CipherVault account website. The original LAN receiver runs on your local computer.')
+        st.link_button('Open account transfers', 'https://ciphervault-alpha.vercel.app')
+        st.caption('Render hosts this Python laboratory. Its server is outside your Wi-Fi network and cannot provide your original LAN receiver URL.')
+        st.stop()
     st.caption('Encrypted delivery over your private network. Share the password separately.')
     setup, guide = st.columns([1.3, 1])
     with setup, st.container(border=True):

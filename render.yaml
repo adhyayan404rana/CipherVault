@@ -1,0 +1,19 @@
+# Separate original Streamlit demonstration; Vercel continues to host account transfers.
+services:
+  - type: web
+    name: ciphervault-streamlit
+    runtime: python
+    plan: free
+    region: singapore
+    repo: https://github.com/adhyayan404rana/CipherVault
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.12
+      - key: CIPHERVAULT_RENDER_DEMO
+        value: "true"
+      - key: CIPHERVAULT_DEMO_PASSWORD
+        sync: false

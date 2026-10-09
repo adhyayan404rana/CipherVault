@@ -58,6 +58,36 @@ uses account inboxes instead of opening a second port on Vercel.
 
 ## Deploy with Supabase and Vercel
 
+## Original Streamlit application on Render
+
+The separate Render service runs `app.py` using Python cryptography, Streamlit,
+Matplotlib and `perf_counter()` timings. The Vercel account edition continues to
+handle account-based transfers. `render.yaml` defines the Streamlit service;
+its start command binds Streamlit to `0.0.0.0` and Render's `$PORT`.
+
+The Render demo requires `CIPHERVAULT_DEMO_PASSWORD` (20+ characters) and
+`CIPHERVAULT_RENDER_DEMO=true`. A generated deployment password is kept privately
+in the local, ignored `local_data/render-demo-password.txt`; it is not a file
+encryption password, an RSA signing passphrase, or a Supabase account password.
+
+Results, uploaded files and keys remain in each Streamlit session; the hosted
+demo does not read or write the original shared local SQLite results database.
+Download outputs before refreshing, locking the laboratory, or leaving the page.
+Files selected here are processed on Render's server, unlike the hosted account
+edition's browser-based file encryption. Use nonsensitive demonstration files.
+This shared access password is a demo gate, not individual user accounts.
+
+The Device transfer section links to the Vercel account edition. The original LAN
+receiver remains available locally; Render cannot expose its additional listener
+through the Streamlit service's single public port. Gemini remains optional and
+requires its own environment configuration on Render.
+
+The free Render service sleeps after inactivity and loses in-memory sessions on
+restart. Opening it may take about one minute after it sleeps; no keep-alive
+service is needed. A paid instance can avoid the free service's idle sleep.
+
+## Vercel account edition
+
 The account edition is deployed at **https://ciphervault-alpha.vercel.app**.
 The production dashboard, JavaScript assets and session endpoint return HTTP 200;
 `/health` reports `mode: supabase`. Unauthenticated transfers, database tables and
