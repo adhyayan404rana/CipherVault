@@ -42,3 +42,28 @@ def test_vercel_cannot_use_ephemeral_local_sqlite(monkeypatch):
     from hosted_app import create_app
     with pytest.raises(RuntimeError,match='Supabase persistence'):
         create_app({'MODE':'local'})
+
+
+@pytest.mark.parametrize('code,expected',[
+    ('invalid_credentials','Invalid email or password'),
+    ('email_not_confirmed','Confirm your email'),
+    ('email_address_not_authorized','default Supabase mailer'),
+    ('over_email_send_rate_limit','rate limit reached'),
+    ('email_address_invalid','rejected this email'),
+])
+def test_auth_codes_provide_safe_actionable_errors(monkeypatch,code,expected):
+    response=Mock(ok=False,status_code=400,json=lambda:{'code':code,'msg':'PRIVATE password and token'})
+    monkeypatch.setattr('hosted_store.requests.request',Mock(return_value=response))
+    with pytest.raises(StoreError,match=expected) as error:
+        SupabaseAccounts('https://test.supabase.co','test-key').login('user@example.test','private password')
+    assert 'PRIVATE' not in str(error.value)
+    assert 'private password' not in str(error.value)
+
+
+@pytest.mark.parametrize('payload',[{'code':'unknown','msg':'PRIVATE'}, {'code':['invalid_credentials']}, ['PRIVATE']])
+def test_unknown_auth_errors_do_not_leak_provider_bodies(monkeypatch,payload):
+    response=Mock(ok=False,status_code=400,json=lambda:payload)
+    monkeypatch.setattr('hosted_store.requests.request',Mock(return_value=response))
+    with pytest.raises(StoreError,match='Cloud request failed') as error:
+        SupabaseAccounts('https://test.supabase.co','test-key').login('user@example.test','password')
+    assert 'PRIVATE' not in str(error.value)

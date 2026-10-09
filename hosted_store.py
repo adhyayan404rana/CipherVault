@@ -194,7 +194,29 @@ class SupabaseAccounts:
         except requests.RequestException as exc:
             raise StoreError('Cloud service could not be reached.') from exc
         if not response.ok:
-            # Do not expose remote error bodies, tokens or credentials.
+            # Translate known Auth codes only; never expose remote messages or secrets.
+            if path.startswith('/auth/v1/'):
+                messages = {
+                    'invalid_credentials': 'Invalid email or password. Localhost accounts are separate; create an account on this website first.',
+                    'email_not_confirmed': 'Confirm your email before signing in. Check your inbox and spam folder.',
+                    'email_address_not_authorized': 'Confirmation email cannot be sent to this address with the default Supabase mailer. Configure custom SMTP, or disable email confirmation for the demo.',
+                    'email_address_invalid': 'Supabase rejected this email address. Use a valid email address you own.',
+                    'over_email_send_rate_limit': 'Confirmation email rate limit reached. Wait before retrying; configure custom SMTP for reliable email delivery.',
+                    'over_request_rate_limit': 'Too many authentication requests. Wait before retrying.',
+                    'signup_disabled': 'Account registration is disabled in Supabase Authentication settings.',
+                    'email_provider_disabled': 'Email sign-in is disabled in Supabase Authentication settings.',
+                    'user_already_exists': 'This account already exists. Sign in with its original account password.',
+                    'email_exists': 'This account already exists. Sign in with its original account password.',
+                    'weak_password': 'Supabase rejected this password as weak. Choose a longer, unique account password.',
+                    'request_timeout': 'Supabase authentication timed out. Try again after a short wait.',
+                }
+                try:
+                    error = response.json()
+                except ValueError:
+                    error = None
+                code = error.get('code') if isinstance(error,dict) else None
+                if isinstance(code,str) and code in messages:
+                    raise StoreError(messages[code])
             if response.status_code in (401,403):
                 raise StoreError('Authentication or access denied. Sign in again.')
             raise StoreError(f'Cloud request failed ({response.status_code}). Check schema, configuration, confirmation email or account details.')
