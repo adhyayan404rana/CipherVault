@@ -214,7 +214,7 @@ class SupabaseAccounts:
                     error = response.json()
                 except ValueError:
                     error = None
-                code = error.get('code') if isinstance(error,dict) else None
+                code = (error.get('error_code') or error.get('code')) if isinstance(error,dict) else None
                 if isinstance(code,str) and code in messages:
                     raise StoreError(messages[code])
             if response.status_code in (401,403):

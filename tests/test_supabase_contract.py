@@ -52,7 +52,7 @@ def test_vercel_cannot_use_ephemeral_local_sqlite(monkeypatch):
     ('email_address_invalid','rejected this email'),
 ])
 def test_auth_codes_provide_safe_actionable_errors(monkeypatch,code,expected):
-    response=Mock(ok=False,status_code=400,json=lambda:{'code':code,'msg':'PRIVATE password and token'})
+    response=Mock(ok=False,status_code=400,json=lambda:{'code':400,'error_code':code,'msg':'PRIVATE password and token'})
     monkeypatch.setattr('hosted_store.requests.request',Mock(return_value=response))
     with pytest.raises(StoreError,match=expected) as error:
         SupabaseAccounts('https://test.supabase.co','test-key').login('user@example.test','private password')
