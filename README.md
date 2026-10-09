@@ -7,7 +7,9 @@ The original synopsis PDF is preserved.
 **New: accounts and hosted transfers.** Run `.\.venv\Scripts\python.exe hosted_app.py`
 and open **http://localhost:8502** in normal/incognito windows to test two accounts.
 The existing Streamlit dashboard remains on port 8501. See [HOSTING.md](HOSTING.md)
-for the account demo, Supabase setup and Vercel deployment instructions.
+for the account demo and deployment instructions. The online dashboard is hosted
+on Vercel, its Flask API runs on Render, and Supabase provides accounts and private
+storage. The original Streamlit app remains a separate local application.
 
 ## Install and launch (Windows PowerShell)
 

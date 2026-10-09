@@ -1,19 +1,27 @@
-# Separate original Streamlit demonstration; Vercel continues to host account transfers.
+# Vercel serves the dashboard; this service runs only the Flask API.
 services:
   - type: web
-    name: ciphervault-streamlit
+    name: ciphervault-backend
     runtime: python
     plan: free
     region: singapore
     repo: https://github.com/adhyayan404rana/CipherVault
     branch: main
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true
-    healthCheckPath: /_stcore/health
+    buildCommand: pip install -r requirements-backend.txt
+    startCommand: gunicorn server:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.12
-      - key: CIPHERVAULT_RENDER_DEMO
+      - key: CIPHERVAULT_HOSTED_MODE
+        value: supabase
+      - key: CIPHERVAULT_API_ONLY
         value: "true"
-      - key: CIPHERVAULT_DEMO_PASSWORD
+      - key: CIPHERVAULT_PUBLIC_ORIGIN
+        value: https://ciphervault-alpha.vercel.app
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: CIPHERVAULT_SESSION_SECRET
         sync: false

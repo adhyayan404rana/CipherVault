@@ -8,6 +8,7 @@ __pycache__/
 *.sig
 local_data/
 demo_files/
+frontend_dist/
 .test-tools/
 test-results/
 

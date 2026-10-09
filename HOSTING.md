@@ -56,113 +56,82 @@ It runs on port 8501, retains its existing results and supports the original sam
 HTTPS receiver. That separate LAN listener remains a local feature; the hosted mode
 uses account inboxes instead of opening a second port on Vercel.
 
-## Deploy with Supabase and Vercel
+## Deploy the dashboard on Vercel and the API on Render
 
-## Original Streamlit application on Render
+The hosted dashboard lives at **https://ciphervault-alpha.vercel.app**.
+Vercel builds only `hosted/index.html`, `app.js`, `crypto.js`, and `style.css`
+using `build_frontend.cjs`; it does not run Streamlit or the Flask backend.
+`vercel.json` forwards `/api/*` and `/health` to the Render backend without
+changing the browser URL. The existing browser crypto, graphs, account UI,
+measured timings, transfers and private storage workflows remain the same.
 
-The separate Render service runs `app.py` using Python cryptography, Streamlit,
-Matplotlib and `perf_counter()` timings. The Vercel account edition continues to
-handle account-based transfers. `render.yaml` defines the Streamlit service;
-its start command binds Streamlit to `0.0.0.0` and Render's `$PORT`.
-
-The Render demo requires `CIPHERVAULT_DEMO_PASSWORD` (20+ characters) and
-`CIPHERVAULT_RENDER_DEMO=true`. A generated deployment password is kept privately
-in the local, ignored `local_data/render-demo-password.txt`; it is not a file
-encryption password, an RSA signing passphrase, or a Supabase account password.
-
-Results, uploaded files and keys remain in each Streamlit session; the hosted
-demo does not read or write the original shared local SQLite results database.
-Download outputs before refreshing, locking the laboratory, or leaving the page.
-Files selected here are processed on Render's server, unlike the hosted account
-edition's browser-based file encryption. Use nonsensitive demonstration files.
-This shared access password is a demo gate, not individual user accounts.
-
-The Device transfer section links to the Vercel account edition. The original LAN
-receiver remains available locally; Render cannot expose its additional listener
-through the Streamlit service's single public port. Gemini remains optional and
-requires its own environment configuration on Render.
-
-The free Render service sleeps after inactivity and loses in-memory sessions on
-restart. Opening it may take about one minute after it sleeps; no keep-alive
-service is needed. A paid instance can avoid the free service's idle sleep.
-
-## Vercel account edition
-
-The account edition is deployed at **https://ciphervault-alpha.vercel.app**.
-The production dashboard, JavaScript assets and session endpoint return HTTP 200;
-`/health` reports `mode: supabase`. Unauthenticated transfers, database tables and
-the compute RPC reject access. The local automated suite passed **94 tests in 50.54s**.
-Authenticated transfers against the live Supabase project still need verification
-with two confirmed accounts; physical two-device testing has not been performed.
-
-Before creating hosted accounts, set Supabase **Authentication > URL Configuration >
-Site URL** to `https://ciphervault-alpha.vercel.app` and save. This controls the return
-URL in confirmation emails. Local accounts are separate and do not migrate automatically.
-For confirmation mail to addresses outside the Supabase project's team, configure
-custom SMTP; the built-in mail service restricts recipients to team addresses.
+Render runs `server:app` with Gunicorn and `requirements-backend.txt`.
+`CIPHERVAULT_API_ONLY=true` disables serving dashboard assets there; its root
+returns API information. The previous separately hosted Streamlit laboratory is
+replaced by this backend. The old Render demo-access password is no longer used.
+The original `app.py` remains runnable locally on port 8501.
 
 ### 1. Supabase
 
-1. Create a Supabase project in your own account. Choose a strong database password;
-   the app does not require that password or a service-role key.
-2. In **SQL Editor**, run [supabase/schema.sql](supabase/schema.sql) **once**. It creates
-   immutable public signing identities, owner-only encrypted private keys, transfers,
-   account-scoped results, bounded compute counters and a private `cipher-packages`
-   bucket with a 20 MiB + package-overhead file limit.
-3. Under **Authentication**, enable email/password sign-in. Keep email confirmation
-   enabled for a public deployment and configure SMTP if needed. Use two real email
-   addresses and confirm each before signing in. Restrict signups to your demonstration
-   users if the deployment should be private. Supabase's auth rate limits apply.
-4. Obtain the project URL and **publishable API key** from project settings. Do not
-   substitute a service-role/secret API key: the application deliberately uses each
-   user's JWT and row-level security.
+Run `supabase/schema.sql` once on a new Supabase project. Do not rerun it on the
+already configured project during migration. Accounts, encrypted signing keys,
+private ciphertext, receipts and numeric results remain in Supabase; migrating
+hosting does not copy or delete those records.
 
-Supabase [Auth](https://supabase.com/docs/guides/auth) and
-[RLS documentation](https://supabase.com/docs/guides/database/secure-data) explain how
-accounts and row permissions work. Public directory entries contain username and
-public signing key, not email, password or encrypted private-key data.
+Keep email/password authentication and email confirmation enabled. Set
+**Authentication > URL Configuration > Site URL** to
+`https://ciphervault-alpha.vercel.app`. Configure custom SMTP for confirmation
+mail to addresses outside the project's team. Local accounts do not migrate
+into Supabase. The application uses a publishable key plus each user's JWT;
+no service-role key is needed.
 
-### 2. Vercel
+### 2. Render API and Vercel dashboard
 
-1. Put the project in your own Git repository and import it into Vercel. Do not include
-   `.env`, `.venv`, `local_data`, `.test-tools`, demo keys or downloaded outputs.
-2. Select the **Flask** framework preset. The checked-in `pyproject.toml` points to
-   `server:app`; `vercel.json` configures the Python function and excludes local/test
-   artifacts. Leave the build command at its default. The Streamlit `app.py` is not
-   the WSGI entrypoint.
-3. Add these Vercel **Environment Variables**:
+Use the existing GitHub repository and `main` branch for both services.
+`render.yaml` documents the free Render backend. Its build command is
+`pip install -r requirements-backend.txt`; its start command is
+`gunicorn server:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120`.
+Health check: `/health`.
 
-   | Name | Value |
-   |---|---|
-   | `CIPHERVAULT_HOSTED_MODE` | `supabase` |
-   | `SUPABASE_URL` | Your project's `https://…supabase.co` URL |
-   | `SUPABASE_PUBLISHABLE_KEY` | Your publishable key |
-   | `CIPHERVAULT_SESSION_SECRET` | Random value generated below |
-   | `GEMINI_API_KEY` | Optional; omit to keep the AI assistant unconfigured |
-   | `GEMINI_MODEL` | Optional supported model; existing discovery also works |
+Configure these environment variables on **Render**, never in frontend code:
 
-   Generate the session secret locally and paste it into Vercel's environment settings:
+| Name | Value |
+|---|---|
+| `CIPHERVAULT_HOSTED_MODE` | `supabase` |
+| `CIPHERVAULT_API_ONLY` | `true` |
+| `CIPHERVAULT_PUBLIC_ORIGIN` | `https://ciphervault-alpha.vercel.app` |
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_PUBLISHABLE_KEY` | Your publishable key |
+| `CIPHERVAULT_SESSION_SECRET` | Persistent random secret, at least 32 characters |
+| `GEMINI_API_KEY` | Optional real AI provider key |
+| `GEMINI_MODEL` | Optional supported model |
 
-   ```powershell
-   .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))"
-   ```
+Keep the previous session secret during migration so browser cookies remain
+valid. Supabase access tokens still expire; signing in again may be necessary.
+Session cookies are Secure, HttpOnly and SameSite=Strict. Requests go through
+Vercel's same-origin proxy; the backend validates the configured frontend Origin
+and CSRF token. It does not allow arbitrary cross-origin browser requests.
 
-   Do not paste your secret into chat or commit it. Keep the same value across
-   deployments unless intentionally revoking all browser sessions.
-4. Deploy. In Supabase Auth settings set the site's URL to your deployed HTTPS URL
-   for confirmation emails. Open `/health`: it should report `mode: supabase`.
-5. Create and confirm two accounts, then follow the local demonstration steps using
-   the deployed website in normal/incognito windows or two separate devices.
+For Vercel choose the **Other** framework preset. `vercel.json` specifies build
+command `node build_frontend.cjs` and output directory `frontend_dist`.
+The frontend build copies four explicit public files, excluding secrets, local
+data, private keys and Python source. Update the rewrite destinations if the
+Render backend URL changes. No backend secrets are required on Vercel.
 
-The [Vercel Flask guide](https://vercel.com/docs/frameworks/backend/flask) describes
-the supported deployment entrypoint. Cloud uploads go directly from the browser to
-private Supabase storage through signed upload URLs, rather than sending 20 MiB through
-a Vercel function. Downloads similarly use short-lived private URLs. This avoids
-Vercel's [function request/response size limit](https://vercel.com/docs/functions/limitations).
-Upload URLs expire according to Supabase's signed-upload lifetime (currently two hours);
-they cannot overwrite existing ciphertext. Transfer access expires after 24 hours;
-download URLs last 60 seconds. Expiry restricts access, but does not physically delete
-expired objects: the sender can delete them; configure periodic cleanup for long-term use.
+Browser encryption and decryption remain local Web Crypto operations. Signed
+ciphertext uploads/downloads go directly to private Supabase storage; plaintext,
+file passwords and unwrapped signing keys are not uploaded to the backend.
+Python benchmarks and bounded analysis run on Render using `perf_counter()`.
+
+The free Render backend may sleep after 15 minutes of inactivity; its first
+request can take about a minute to wake it. The static dashboard stays available,
+but account/API operations wait for the backend. No continuous ping service is
+configured. A paid instance can avoid idle sleep. Supabase free projects may
+pause after low activity; restore through its dashboard if needed.
+
+Transfer access expires after 24 hours; signed download URLs last 60 seconds.
+Expiry blocks new access but does not physically delete old ciphertext. Sender
+deletion removes the object; schedule cleanup separately for long-term usage.
 
 ### 3. Verify access isolation after deployment
 

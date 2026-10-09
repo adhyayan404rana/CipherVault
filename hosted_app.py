@@ -60,8 +60,14 @@ def load_der_public(value):
 
 def create_app(config=None):
     load_dotenv()
-    app = Flask(__name__,static_folder='hosted',static_url_path='/assets')
     settings = config or {}
+    api_only = settings.get('API_ONLY',os.getenv('CIPHERVAULT_API_ONLY')=='true')
+    public_origin = settings.get('PUBLIC_ORIGIN',os.getenv('CIPHERVAULT_PUBLIC_ORIGIN','')).rstrip('/')
+    if public_origin:
+        origin_url = urlparse(public_origin)
+        if origin_url.scheme!='https' or not origin_url.netloc or origin_url.path or origin_url.query or origin_url.fragment or origin_url.username:
+            raise RuntimeError('CIPHERVAULT_PUBLIC_ORIGIN must be an HTTPS website origin.')
+    app = Flask(__name__,static_folder=None if api_only else 'hosted',static_url_path='/assets')
     mode = settings.get('MODE',os.getenv('CIPHERVAULT_HOSTED_MODE','supabase' if os.getenv('VERCEL') else 'local'))
     if os.getenv('VERCEL') and mode != 'supabase':
         raise RuntimeError('Vercel requires Supabase persistence; local SQLite mode is not supported there.')
@@ -84,7 +90,7 @@ def create_app(config=None):
         raise RuntimeError('CIPHERVAULT_SESSION_SECRET must contain at least 32 characters.')
     app.config.update(SECRET_KEY=secret,MAX_CONTENT_LENGTH=crypto.MAX_PACKAGE,
                       SESSION_COOKIE_NAME='cv_account',SESSION_COOKIE_HTTPONLY=True,
-                      SESSION_COOKIE_SAMESITE='Strict',SESSION_COOKIE_SECURE=bool(os.getenv('VERCEL')),
+                      SESSION_COOKIE_SAMESITE='Strict',SESSION_COOKIE_SECURE=mode=='supabase' or bool(public_origin),
                       PERMANENT_SESSION_LIFETIME=dt.timedelta(hours=8))
     app.config.update(settings)
     app.extensions['accounts'] = store
@@ -99,7 +105,8 @@ def create_app(config=None):
             if not csrf or not secrets.compare_digest(csrf,session.get('csrf','')):
                 abort(403,description='Refresh this page before submitting (CSRF check failed).')
             origin = request.headers.get('Origin')
-            if origin and urlparse(origin).netloc != request.host:
+            expected_origin = public_origin or request.host_url.rstrip('/')
+            if origin and origin.rstrip('/') != expected_origin:
                 abort(403,description='Cross-site requests are not permitted.')
         if request.path in ('/api/session','/api/register','/api/login'):
             return
@@ -165,11 +172,13 @@ def create_app(config=None):
 
     @app.get('/')
     def index():
+        if api_only:
+            return jsonify(service='CipherVault API',frontend=public_origin)
         return send_file(ROOT/'hosted'/'index.html')
 
     @app.get('/health')
     def health():
-        return jsonify(status='ok',mode=store.mode)
+        return jsonify(status='ok',mode=store.mode,role='api' if api_only else 'web')
 
     @app.get('/api/session')
     def current_session():
