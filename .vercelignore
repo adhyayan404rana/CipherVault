@@ -1,0 +1,15 @@
+.venv/
+.test-tools/
+test-results/
+local_data/
+.pytest_cache/
+__pycache__/
+.env*
+.vercel/
+demo_files/
+tests/
+*.pdf
+*.key
+*.pem
+*.cvault
+*.sig

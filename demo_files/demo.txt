@@ -1,0 +1,12 @@
+CipherVault Encryption Demo
+
+This is a sample text file for testing file encryption and decryption.
+
+Project: CipherVault
+Purpose: Protect file contents using AES-256-GCM.
+
+Upload this file in File vault, enter a password, and encrypt it.
+Download the encrypted package, then decrypt it using the same password.
+The recovered file should contain exactly the same text as this original.
+
+Sample message: Our project demonstration is ready.
