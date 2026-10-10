@@ -106,6 +106,7 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     assert.equal(await alice.locator('#hash_resistance-results canvas').count(),4);
     await navigate(alice,'analysis');await alice.locator('[data-analysis="avalanche"]').click();
     await alice.locator('#avalanche-results canvas').first().waitFor();
+    assert.equal(await alice.locator('#avalanche-results canvas').count(),1);
     await navigate(alice,'benchmark');await alice.locator('#page-benchmark [data-analysis="benchmarks"]').click();
     await alice.locator('#benchmarks-results canvas').first().waitFor({timeout:45000});
     await navigate(alice,'vault');await alice.locator('[data-analysis="password_lengths"]').click();
