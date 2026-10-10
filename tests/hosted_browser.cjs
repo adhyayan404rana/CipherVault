@@ -99,6 +99,11 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     await alice.locator('#verify-file').setInputFiles(input.demo);await alice.locator('#verify-signature').setInputFiles(input.signature);await alice.locator('#verify-public').setInputFiles(input.publicKey);
     await alice.locator('#verify').click();await alice.waitForFunction(()=>document.getElementById('verify-status').textContent.includes('Signature VERIFIED'));
     await alice.locator('#verify-file').setInputFiles(input.changed);await alice.locator('#verify').click();await alice.waitForFunction(()=>document.getElementById('verify-status').textContent.includes('FAILED'));
+    await alice.locator('#page-integrity [data-analysis="hash_resistance"]').click();
+    await alice.locator('#integrity-resistance-results canvas').first().waitFor({timeout:45000});
+    assert.equal(await alice.locator('#integrity-resistance-results canvas').count(),4);
+    assert((await alice.locator('#integrity-resistance-results').textContent()).includes('does not prove resistance'));
+    assert.equal(await alice.locator('#hash_resistance-results canvas').count(),4);
     await navigate(alice,'analysis');await alice.locator('[data-analysis="avalanche"]').click();
     await alice.locator('#avalanche-results canvas').first().waitFor();
     await navigate(alice,'benchmark');await alice.locator('#page-benchmark [data-analysis="benchmarks"]').click();
