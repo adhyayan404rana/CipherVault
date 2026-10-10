@@ -35,6 +35,15 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     const contextA=await browser.newContext(),contextB=await browser.newContext();
     const alice=await contextA.newPage(),bob=await contextB.newPage();
     for(const page of [alice,bob])page.on('pageerror',error=>errors.push(error.message));
+    await alice.goto(input.base);
+    await alice.waitForFunction(()=>typeof csrf==='string'&&csrf.length>0);
+    await alice.route('**/api/login',route=>route.fulfill({status:503,contentType:'text/html',body:'<!DOCTYPE html><html>private upstream details</html>'}));
+    await alice.locator('#email').fill('alice@example.test');
+    await alice.locator('#account-password').fill('browser account password 2026!');
+    await alice.locator('#login').click();
+    await alice.waitForFunction(()=>document.getElementById('auth-status').textContent.includes('temporarily unavailable (HTTP 503)'));
+    assert(!(await alice.locator('#auth-status').textContent()).includes('private upstream details'));
+    await alice.unroute('**/api/login');
     await auth(alice,'alice@example.test','alice');await auth(bob,'bob@example.test','bob');
     await navigate(alice,'transfer');await alice.locator('#refresh-transfers').click();
     await alice.waitForFunction(()=>document.querySelectorAll('#recipient option').length===1);

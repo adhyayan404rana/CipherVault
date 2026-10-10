@@ -8,7 +8,12 @@ async function api(path,data,method){
   const options={method:method||(data===undefined?'GET':'POST'),credentials:'same-origin',headers:{}};
   if(options.method!=='GET')options.headers['X-CSRF-Token']=csrf;
   if(data!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(data);}
-  const response=await fetch('/api/'+path,options),value=await response.json();
+  options.signal=AbortSignal.timeout(90000);
+  let response;
+  try{response=await fetch('/api/'+path,options);}catch(error){throw Error(error.name==='TimeoutError'?'The backend did not respond within 90 seconds. Wait a minute, refresh this page and try again.':'Could not reach the backend. Check your connection, wait a minute and refresh this page.');}
+  if(!response.headers.get('Content-Type')?.includes('application/json'))throw Error(`The backend is temporarily unavailable (HTTP ${response.status}). It may be waking up or a proxy request failed. Wait a minute, refresh this page and try again. This response does not indicate an incorrect password.`);
+  let value;
+  try{value=await response.json();}catch(error){throw Error('The backend returned an invalid API response. Refresh this page and try again.');}
   if(!response.ok)throw Error(value.error+(value.elapsed_until_failure_seconds!==undefined?'\n'+timing('Elapsed until failure (server)',value.elapsed_until_failure_seconds):''));
   if(value.csrf)csrf=value.csrf;
   return value;
