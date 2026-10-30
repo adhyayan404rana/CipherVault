@@ -109,13 +109,32 @@ def test_two_accounts_transfer_signature_hash_receipt_and_isolation(pair):
             'decrypt_seconds':recovered.seconds,'aes_seconds':recovered.value['aes_seconds'],
             'hash_seconds':recovered.value['hash_seconds'],'signature_seconds':crypto.verify_file(json.dumps(manifest,separators=(',',':')).encode(),base64.b64decode(alice.get('/api/transfers').json['transfers'][0]['signature']),key.public_key())['verify_seconds'],
             'receive_seconds':time.perf_counter()-network_start,'recovered_at':dt.datetime.now(dt.timezone.utc).isoformat()}
+    sender_record=alice.get('/api/transfers').json['transfers'][0]
+    signed_message=base64.b64decode(sender_record['message'])
+    sender_signature=base64.b64decode(sender_record['signature'])
+    attestation={'version':1,'transfer_id':tid,'recipient_id':bid,
+                 'manifest_sha256':hashlib.sha256(signed_message).hexdigest(),
+                 'sender_event_sha256':hashlib.sha256(signed_message+sender_signature).hexdigest(),
+                 'package_sha256':manifest['package_sha256'],'recovered_sha256':report['sha256'],
+                 'recovered_at':report['recovered_at']}
+    wrapped=bob.get('/api/identity').json['profile']['wrapped_key']
+    private_der=AESGCM(crypto.derive_key(SIGNING_PASSWORD,base64.b64decode(wrapped['salt']))).decrypt(
+        base64.b64decode(wrapped['nonce']),base64.b64decode(wrapped['ciphertext']),
+        ('CipherVault signing identity:'+bid).encode())
+    recipient_key=serialization.load_der_private_key(private_der,password=None)
+    attestation_message=json.dumps(attestation,separators=(',',':')).encode()
+    report['attestation_message']=base64.b64encode(attestation_message).decode()
+    report['attestation_signature']=base64.b64encode(crypto.sign_file(attestation_message,recipient_key)['signature']).decode()
     assert post(alice,'transfers/'+tid+'/receipt',report).status_code==404
     assert post(eve,'transfers/'+tid+'/receipt',report).status_code==404
+    forged=dict(report,attestation_signature=base64.b64encode(bytes(384)).decode())
+    assert post(bob,'transfers/'+tid+'/receipt',forged).status_code==400
     assert post(bob,'transfers/'+tid+'/receipt',report).status_code==200
     assert post(bob,'transfers/'+tid+'/receipt',report).status_code==400
     receipt=alice.get('/api/transfers').json['transfers'][0]
     assert receipt['status']=='verified' and receipt['receipt']['sha256']==manifest['original_sha256']
     assert 'recorded_at' in receipt['receipt']
+    assert receipt['receipt']['recipient_fingerprint']==hashlib.sha256(base64.b64decode(receipt['receipt']['recipient_public_key'])).hexdigest()
     assert post(bob,'transfers/'+tid,None,method='DELETE').status_code==404
     assert post(alice,'transfers/'+tid,None,method='DELETE').status_code==200
     assert bob.get('/api/transfers/'+tid+'/download').status_code==404
@@ -170,5 +189,5 @@ def test_hosted_analysis_runs_real_measurements_without_ai_key(web,monkeypatch):
     assert response.json['result']['total_seconds']>=0
     assert len(response.json['result']['rows'])==64
     assert 'avalanche' in client.get('/api/results').json['results']
-    assert post(client,'ai',{'question':'Explain AES-GCM'}).status_code==400
+    assert post(client,'ai',{'question':'Explain AES-GCM'}).status_code==404
     assert client.get('/health').status_code==200

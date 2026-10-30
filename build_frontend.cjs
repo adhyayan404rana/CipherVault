@@ -4,7 +4,7 @@ const path=require('node:path');
 const output=path.join(__dirname,'frontend_dist');
 fs.mkdirSync(path.join(output,'assets'),{recursive:true});
 fs.copyFileSync(path.join(__dirname,'hosted/index.html'),path.join(output,'index.html'));
-for(const file of ['app.js','crypto.js','style.css']){
+for(const file of ['app.js','crypto.js','evidence.js','traffic.js','style.css','ciphervault_bg.jpg']){
   fs.copyFileSync(path.join(__dirname,'hosted',file),path.join(output,'assets',file));
 }
-console.log('Built public CipherVault dashboard (four static files).');
+console.log('Built public CipherVault dashboard (with background assets).');

@@ -31,20 +31,116 @@ async function openArtifacts(){
 }
 async function artifact(key,value){if(!artifacts)return null;return new Promise((resolve,reject)=>{const tx=artifacts.transaction('artifacts',value===undefined?'readonly':'readwrite'),store=tx.objectStore('artifacts'),request=value===undefined?store.get(key):store.put(value,key);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(Error('Could not save encrypted output in browser storage.'));});}
 async function save(kind,value){await api('results/'+kind,value);results[kind]=value;}
-function page(name){document.querySelectorAll('.page').forEach(node=>node.hidden=node.id!=='page-'+name);document.querySelectorAll('nav button').forEach(node=>node.classList.toggle('active',node.dataset.page===name));window.scrollTo(0,0);}
+function page(name){document.querySelectorAll('.page').forEach(node=>node.hidden=node.id!=='page-'+name);document.querySelectorAll('nav button').forEach(node=>(node.classList.toggle('active',node.dataset.page===name),node.setAttribute('aria-current',node.dataset.page===name?'page':'false')));window.scrollTo(0,0);}
 document.querySelectorAll('[data-page]').forEach(node=>node.addEventListener('click',()=>page(node.dataset.page)));
 function table(parent,rows){if(!rows.length)return;const wrap=document.createElement('div');wrap.className='table-wrap';const t=document.createElement('table'),head=document.createElement('tr'),keys=Object.keys(rows[0]).filter(k=>typeof rows[0][k]!=='object');for(const k of keys){const th=document.createElement('th');th.textContent=k;head.append(th);}t.append(head);for(const row of rows){const tr=document.createElement('tr');for(const k of keys){const td=document.createElement('td');td.textContent=typeof row[k]==='number'?Number(row[k].toFixed(6)):String(row[k]??'');tr.append(td);}t.append(tr);}wrap.append(t);parent.append(wrap);}
 function csv(parent,rows,name){if(!rows.length)return;const keys=Object.keys(rows[0]).filter(k=>typeof rows[0][k]!=='object'),quote=x=>'"'+String(x??'').replaceAll('"','""')+'"',text=[keys.map(quote).join(','),...rows.map(r=>keys.map(k=>quote(r[k])).join(','))].join('\n');const a=document.createElement('a'),url=URL.createObjectURL(new Blob([text],{type:'text/csv'}));blobUrls.add(url);a.href=url;a.download=name+'.csv';a.textContent='Download measurements CSV';parent.append(a);}
 function paragraph(parent,text){const p=document.createElement('p');p.textContent=text;parent.append(p);}
-function plot(parent,title,series,xlabel,ylabel){
-  const canvas=document.createElement('canvas');canvas.width=900;canvas.height=410;canvas.setAttribute('role','img');canvas.setAttribute('aria-label',title);parent.append(canvas);const x=canvas.getContext('2d'),all=series.flatMap(s=>s.points).filter(p=>p.every(Number.isFinite));if(!all.length)return;
-  const left=85,right=865,top=60,bottom=310,maxY=Math.max(...all.map(p=>p[1]),.000001)*1.15,values=[...new Set(all.map(p=>p[0]))].sort((a,b)=>a-b),minX=values[0],maxX=values.at(-1),px=v=>left+(v-minX)/(maxX-minX||1)*(right-left),py=v=>bottom-v/maxY*(bottom-top),colors=['#38bdf8','#6ee7b7','#c4b5fd','#fbbf24'];
-  x.fillStyle='#101a2a';x.fillRect(0,0,900,410);x.fillStyle='#e6edf6';x.font='20px system-ui';x.fillText(title,30,32);x.font='12px system-ui';x.strokeStyle='#344458';
-  for(let i=0;i<=4;i++){const y=top+(bottom-top)*i/4;x.beginPath();x.moveTo(left,y);x.lineTo(right,y);x.stroke();x.fillText((maxY*(1-i/4)).toPrecision(3),8,y+4);}
-  for(const value of values){const text=Number.isInteger(value)?String(value):value.toPrecision(3);x.fillText(text,px(value)-12,bottom+23);}
-  x.fillText(xlabel,330,355);x.save();x.translate(20,265);x.rotate(-Math.PI/2);x.fillText(ylabel,0,0);x.restore();
-  series.forEach((s,index)=>{x.strokeStyle=colors[index%colors.length];x.fillStyle=x.strokeStyle;x.beginPath();s.points.forEach((p,i)=>i?x.lineTo(px(p[0]),py(p[1])):x.moveTo(px(p[0]),py(p[1])));x.stroke();for(const p of s.points){x.beginPath();x.arc(px(p[0]),py(p[1]),4,0,Math.PI*2);x.fill();}x.fillText(s.name,60+index*240,390);});
+function getThemeColors(){
+  const mode=document.documentElement.getAttribute('data-theme')||'system';
+  const isLight=mode==='light'||(mode==='system'&&window.matchMedia&&!window.matchMedia('(prefers-color-scheme: dark)').matches);
+  return isLight?['#0284c7','#059669','#7c3aed','#d97706']:['#58c4f6','#69dfba','#bba5fa','#f5c875'];
 }
+function plot(parent,title,series,xlabel,ylabel){
+  const clean=series.map(s=>({...s,points:s.points.filter(p=>p.every(Number.isFinite)).sort((a,b)=>a[0]-b[0])}));
+  const all=clean.flatMap(s=>s.points),card=document.createElement('figure');card.className='chart-card';
+  const heading=document.createElement('figcaption');heading.textContent=title;card.append(heading);parent.append(card);
+  if(!all.length){paragraph(card,'No measurements available yet.');return;}
+  const legend=document.createElement('div');legend.className='chart-legend';card.append(legend);
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
+  svg.classList.add('measurement-chart');svg.setAttribute('role','img');svg.setAttribute('aria-label',title+'. '+xlabel+'; '+ylabel);card.append(svg);
+  const tip=document.createElement('output');tip.className='chart-tooltip';tip.hidden=true;card.append(tip);
+  const format=v=>v===0?'0':Math.abs(v)<.01?v.toExponential(1):Number(v.toPrecision(4)).toLocaleString('en-US');
+  const values=[...new Set(all.map(p=>p[0]))].sort((a,b)=>a-b),minX=values[0],maxX=values.at(-1);
+  // Wide file-size ranges need logarithmic spacing so the small files remain readable.
+  const logX=minX>0&&maxX/minX>=100,tx=v=>logX?Math.log10(v):v;
+  const low=Math.min(0,...all.map(p=>p[1])),high=Math.max(...all.map(p=>p[1]),.000001);
+  // Open nearly face-on, matching the analysis chart's readable front view.
+  const startAzimuth=0,startElevation=.12;
+  let azimuth=startAzimuth,elevation=startElevation,autoRotate=!window.matchMedia('(prefers-reduced-motion: reduce)').matches,drag=null;
+  const controls=document.createElement('div');controls.className='chart-controls';card.insertBefore(controls,svg);
+  const hint=document.createElement('span');hint.textContent='3D | Drag to rotate | Depth = series';controls.append(hint);
+  function control(label,action){const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=label;button.addEventListener('click',action);controls.append(button);}
+  function pauseRotation(){autoRotate=false;rotationButton.textContent='Play rotation';rotationButton.setAttribute('aria-pressed','false');}
+  const rotationButton=document.createElement('button');rotationButton.type='button';rotationButton.className='secondary';rotationButton.textContent=autoRotate?'Pause rotation':'Play rotation';rotationButton.setAttribute('aria-pressed',String(autoRotate));rotationButton.addEventListener('click',()=>{autoRotate=!autoRotate;rotationButton.textContent=autoRotate?'Pause rotation':'Play rotation';rotationButton.setAttribute('aria-pressed',String(autoRotate));});controls.append(rotationButton);
+  control('Rotate left',()=>{pauseRotation();azimuth-=.15;draw();});
+  control('Rotate right',()=>{pauseRotation();azimuth+=.15;draw();});
+  control('Reset view',()=>{pauseRotation();azimuth=startAzimuth;elevation=startElevation;draw();});
+  svg.setAttribute('tabindex','0');svg.setAttribute('role','group');
+  svg.setAttribute('aria-label',title+'. 3D graph. '+xlabel+'; '+ylabel+'. Depth represents series. Use arrow keys to rotate.');
+  const clamp=v=>Math.max(.08,Math.min(1.15,v));
+  svg.addEventListener('pointerdown',event=>{if(event.button!==0)return;pauseRotation();drag={x:event.clientX,y:event.clientY,a:azimuth,e:elevation};svg.setPointerCapture(event.pointerId);});
+  svg.addEventListener('pointermove',event=>{if(!drag)return;azimuth=drag.a+(event.clientX-drag.x)*.006;elevation=clamp(drag.e+(event.clientY-drag.y)*.005);draw();});
+  const stopDrag=()=>{drag=null;};
+  svg.addEventListener('pointerup',stopDrag);svg.addEventListener('pointercancel',stopDrag);svg.addEventListener('lostpointercapture',stopDrag);
+  svg.addEventListener('keydown',event=>{if(event.target!==svg)return;if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home'].includes(event.key))return;event.preventDefault();pauseRotation();if(event.key==='Home'){azimuth=startAzimuth;elevation=startElevation;}else if(event.key==='ArrowLeft')azimuth-=.1;else if(event.key==='ArrowRight')azimuth+=.1;else elevation=clamp(elevation+(event.key==='ArrowUp'?.1:-.1));draw();});
+  function draw(){
+    tip.hidden=true;
+    const colors=getThemeColors();
+    legend.replaceChildren();
+    clean.forEach((s,i)=>{const item=document.createElement('span'),dot=document.createElement('i');dot.style.background=colors[i%colors.length];item.append(dot,document.createTextNode(s.name));legend.append(item);});
+    const width=Math.max(280,card.clientWidth-40),height=width<500?390:Math.min(820,Math.max(540,width*.64));
+    svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.replaceChildren();
+    // Orthographic projection of real 3D coordinates: X = input, Y = series, Z = measurement.
+    const ca=Math.cos(azimuth),sa=Math.sin(azimuth),ce=Math.cos(elevation),se=Math.sin(elevation);
+    function rotate(x,y,z){const horizontal=x*ca-y*sa,depth=x*sa+y*ca;return [horizontal,depth*se-z*ce,depth*ce+z*se];}
+    const corners=[];for(const x of [-1,1])for(const y of [-.55,.55])for(const z of [0,1.2])corners.push(rotate(x,y,z));
+    const xs=corners.map(p=>p[0]),ys=corners.map(p=>p[1]);
+    const xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys);
+    const scale=Math.min((width-105)/(xmax-xmin),(height-105)/(ymax-ymin));
+    function project(x,y,z){const p=rotate(x,y,z);return [width/2+(p[0]-(xmin+xmax)/2)*scale,38+(height-105)/2+(p[1]-(ymin+ymax)/2)*scale,p[2]];}
+    const px=v=>minX===maxX?0:-1+2*(tx(v)-tx(minX))/(tx(maxX)-tx(minX));
+    const pz=v=>(v-low)/(high*1.12-low)*1.2;
+    const lane=i=>clean.length===1?0:-.55+1.1*i/(clean.length-1);
+    function el(tag,attrs,text){const node=document.createElementNS(ns,tag);for(const [key,value]of Object.entries(attrs))node.setAttribute(key,value);if(text!==undefined)node.textContent=text;svg.append(node);return node;}
+    function line(a,b,attrs={}){const p=project(...a),q=project(...b);return el('line',{x1:p[0],y1:p[1],x2:q[0],y2:q[1],class:'chart-gridline',...attrs});}
+    function label(position,text,attrs={}){const p=project(...position);el('text',{x:p[0],y:p[1],'text-anchor':'middle',...attrs},text);}
+    el('title',{},title);el('desc',{},'3D measured values with separate series lanes. Drag or use arrow keys to rotate. Focus or hover over a point to inspect it.');
+    const floor=[[-1,-.55,0],[1,-.55,0],[1,.55,0],[-1,.55,0]].map(p=>project(...p));
+    el('polygon',{points:floor.map(p=>p.slice(0,2).join(',')).join(' '),fill:'var(--chart-grid)','fill-opacity':'.22'});
+    for(let i=0;i<=4;i++){
+      const z=1.2*i/4,v=low+(high*1.12-low)*i/4;
+      line([-1,-.55,z],[1,-.55,z]);line([-1,-.55,z],[-1,.55,z]);
+      label([-1,.55,z],format(v),{dx:-9,dy:4,'text-anchor':'end'});
+    }
+    line([-1,.55,0],[-1,.55,1.2],{'stroke-dasharray':'none'});
+    const stride=Math.max(1,Math.ceil((values.length-1)/(width<500?3:7)));
+    values.filter((v,i)=>i%stride===0||i===values.length-1).forEach(v=>{line([px(v),-.55,0],[px(v),.55,0]);label([px(v),.55,0],format(v),{dy:22});});
+    el('text',{x:12,y:20,class:'chart-unit'},ylabel);
+    el('text',{x:width/2,y:height-12,'text-anchor':'middle'},xlabel+(logX?' (log scale)':''));
+    const ordered=clean.map((s,index)=>({s,index,depth:rotate(0,lane(index),0)[2]})).sort((a,b)=>a.depth-b.depth);
+    for(const {s,index}of ordered){
+      const color=colors[index%colors.length],y=lane(index);
+      line([-1,y,0],[1,y,0],{stroke:color,'stroke-opacity':'.4'});
+      label([1,y,0],String(index+1),{dx:12,dy:4});
+      const points=s.points.map(p=>project(px(p[0]),y,pz(p[1])));
+      if(points.length>1){
+        const baseStart=project(px(s.points[0][0]),y,0),baseEnd=project(px(s.points.at(-1)[0]),y,0);
+        el('polygon',{points:[baseStart,...points,baseEnd].map(p=>p.slice(0,2).join(',')).join(' '),fill:color,'fill-opacity':'.09'});
+        el('path',{d:points.map((p,i)=>`${i?'L':'M'}${p[0]},${p[1]}`).join(' '),fill:'none',stroke:color,'stroke-width':2.5,'stroke-linejoin':'round','stroke-linecap':'round'});
+      }
+      s.points.forEach((p,i)=>{
+        const label=`${s.name} | ${xlabel}: ${format(p[0])} | ${ylabel}: ${format(p[1])}`;
+        const point=el('circle',{cx:points[i][0],cy:points[i][1],r:4.5,fill:color,stroke:'var(--chart-point-stroke)','stroke-width':1.5,tabindex:0,'aria-label':label,class:'chart-point'});
+        const show=()=>{if(drag)return;tip.textContent=label;tip.hidden=false;};const hide=()=>{tip.hidden=true;};
+        point.addEventListener('pointerenter',show);point.addEventListener('pointerleave',hide);point.addEventListener('focus',show);point.addEventListener('blur',hide);
+        point.addEventListener('keydown',e=>{if(e.key==='Escape')hide();});
+      });
+    }
+    [...legend.children].forEach((item,i)=>item.append(document.createTextNode(` (lane ${i+1})`)));
+  }
+  draw();
+  chartAnimators.set(card,elapsed=>{if(!autoRotate||drag||document.hidden||svg.matches(':hover')||svg.contains(document.activeElement)||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;azimuth+=elapsed*.000052;draw();});
+  chartResizeObserver.observe(card);chartDrawers.set(card,draw);
+}
+const chartDrawers=new WeakMap();
+const chartAnimators=new Map();
+let lastChartFrame=performance.now();
+setInterval(()=>{const now=performance.now(),elapsed=Math.min(now-lastChartFrame,250);lastChartFrame=now;for(const [card,advance] of chartAnimators){if(!card.isConnected){chartAnimators.delete(card);continue;}const bounds=card.getBoundingClientRect();if(bounds.width&&bounds.bottom>0&&bounds.top<innerHeight)advance(elapsed);}},100);
+const chartResizeObserver=new ResizeObserver(entries=>{for(const {target}of entries){if(target.isConnected)chartDrawers.get(target)?.();else chartResizeObserver.unobserve(target);}});
+// Stop observing charts removed when a new experiment replaces its results.
+new MutationObserver(records=>{for(const record of records)for(const node of record.removedNodes)if(node.nodeType===1){if(node.matches('.chart-card'))chartResizeObserver.unobserve(node);node.querySelectorAll('.chart-card').forEach(card=>chartResizeObserver.unobserve(card));}}).observe(document.body,{childList:true,subtree:true});
+
 function renderMeasurements(kind,value,target=null){
   if(kind==='hash_resistance'&&!target&&$('integrity-resistance-results'))renderMeasurements(kind,value,$('integrity-resistance-results'));
   const parent=target||$(kind+'-results');if(!parent)return;parent.replaceChildren();paragraph(parent,timing('Total measured analysis (Python server)',value.total_seconds));
@@ -81,21 +177,23 @@ function receiptFields(parent,title,entries){
   const section=document.createElement('section'),heading=document.createElement('h3'),list=document.createElement('dl');heading.textContent=title;list.className='receipt-fields';section.append(heading,list);
   for(const [label,value]of entries){const term=document.createElement('dt'),description=document.createElement('dd');term.textContent=label;description.textContent=value;list.append(term,description);}parent.append(section);
 }
+function downloadEvidence(value){const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');blobUrls.add(url);link.href=url;link.download='ciphervault-evidence-'+value.transfer_id+'.json';link.click();setTimeout(()=>{URL.revokeObjectURL(url);blobUrls.delete(url);},60000);}
 function signatureDetails(parent,signature,verified){const details=document.createElement('details'),summary=document.createElement('summary'),value=document.createElement('pre');summary.textContent='Digital signature · RSA-PSS / SHA-256 · Base64';value.textContent=signature;details.append(summary);paragraph(details,verified?'Receiver reports signature verified against the trusted signing fingerprint.':'Sender signature; awaiting recipient verification.');paragraph(details,'Signs the transfer manifest, which binds the encrypted package hash, original file hash, sender and recipient.');details.append(value);parent.append(details);}
 function receiptTimings(parent,title,values,labels){const entries=Object.entries(values||{}).filter(([key,value])=>key.endsWith('_seconds')&&Number.isFinite(value)).map(([key,value])=>[labels[key]||key.replaceAll('_',' '),(value*1000).toFixed(3)+' ms']);receiptFields(parent,title,entries);}
 async function refreshTransfers(){
   users=(await api('directory')).users;transfers=(await api('transfers')).transfers;
+  await Promise.all(transfers.filter(row=>row.receipt).map(async row=>{try{row.evidence_valid=(await CVevidence.verify(CVevidence.bundle(row))).status==='verified-chain';}catch(error){row.evidence_valid=false;row.evidence_error=error.message;}}));
   $('recipient').replaceChildren();for(const user of users.filter(u=>u.user_id!==account.id)){const option=document.createElement('option');option.value=user.user_id;option.textContent=user.username;$('recipient').append(option);}
   $('inbox').replaceChildren();for(const row of transfers.filter(t=>t.recipient_id===account.id&&['sent','verified'].includes(t.status)&&Date.parse(t.expires_at)>Date.now())){const option=document.createElement('option');option.value=row.id;option.textContent=row.manifest.filename+' · from '+(users.find(u=>u.user_id===row.sender_id)?.username||row.sender_id);$('inbox').append(option);}
   const parent=$('transfer-list');parent.replaceChildren();
-  for(const row of transfers){const item=document.createElement('article');item.className='transfer-item';const heading=document.createElement('h3');heading.textContent=row.manifest.filename;item.append(heading);const status=document.createElement('span');status.className='badge';status.textContent=Date.parse(row.expires_at)<=Date.now()?'Expired':row.receipt?'Verified recovery':row.status==='sent'?'Awaiting recovery':row.status;item.append(status);paragraph(item,`${row.sender_id===account.id?'Sent':'Inbox'} · ${row.manifest.size_bytes} bytes · ${users.find(u=>u.user_id===row.sender_id)?.username||'Sender'} → ${users.find(u=>u.user_id===row.recipient_id)?.username||'Recipient'}`);
-    if(row.receipt)paragraph(item,'File successfully transferred and recovered (recipient report).');
+  for(const row of transfers){const item=document.createElement('article');item.className='transfer-item';const heading=document.createElement('h3');heading.textContent=row.manifest.filename;item.append(heading);const status=document.createElement('span');status.className='badge';status.textContent=Date.parse(row.expires_at)<=Date.now()?'Expired':row.evidence_valid?'Verified recovery':row.receipt?'Unverified receipt':row.status==='sent'?'Awaiting recovery':row.status;item.append(status);paragraph(item,`${row.sender_id===account.id?'Sent':'Inbox'} · ${row.manifest.size_bytes} bytes · ${users.find(u=>u.user_id===row.sender_id)?.username||'Sender'} → ${users.find(u=>u.user_id===row.recipient_id)?.username||'Recipient'}`);
+    if(row.evidence_valid)paragraph(item,'File successfully transferred and recovered (signed recipient claim).');else if(row.receipt)paragraph(item,'Receipt cannot be cryptographically verified: '+(row.evidence_error||'recipient signature missing'));
     const grid=document.createElement('div');grid.className='receipt-grid';item.append(grid);
     receiptFields(grid,'Integrity & authenticity',[
       ['Original SHA-256',row.manifest.original_sha256],
       ['Recovered SHA-256',row.receipt?.sha256||'Awaiting recovery'],
       ['Hash comparison',row.receipt?(row.receipt.sha256===row.manifest.original_sha256?'MATCH':'MISMATCH'):'Pending'],
-      ['RSA-PSS signature',row.receipt?.signature_valid?'VERIFIED (recipient report)':'Signed; pending recipient verification'],
+      ['RSA-PSS signature',row.evidence_valid?'VERIFIED (sender and recipient)':'Signed; recipient evidence pending or invalid'],
       ['Sender signing fingerprint',row.fingerprint],
     ]);
     receiptFields(grid,'Transfer timeline',[
@@ -108,17 +206,18 @@ async function refreshTransfers(){
     receiptTimings(grid,'Sender timings',{...row.timings,...(row.upload_seconds!=null?{upload_seconds:row.upload_seconds}:{})},{aes_seconds:'AES encryption',encryption_seconds:'Encryption workflow',hash_seconds:'SHA-256 (file + package)',key_setup_seconds:'Password derivation',sign_seconds:'RSA-PSS signing',upload_seconds:'Upload + complete response'});
     if(row.receipt){receiptTimings(grid,'Receiver timings',row.receipt,{aes_seconds:'AES decryption',decrypt_seconds:'Decryption workflow',hash_seconds:'Recovered file SHA-256',network_seconds:'Download + complete response',receive_seconds:'Total receive & recovery',signature_seconds:'RSA-PSS verification'});paragraph(item,timing('Combined measured processing time',row.timings.encryption_seconds+row.timings.sign_seconds+(row.upload_seconds||0)+row.receipt.receive_seconds));paragraph(item,'Sum of encryption workflow, signing, upload and receive/recovery. Excludes signing-key unlock, metadata requests and time waiting for the receiver.');}
     signatureDetails(item,row.signature,!!row.receipt?.signature_valid);
+    const evidenceButton=document.createElement('button');evidenceButton.type='button';evidenceButton.className='secondary';evidenceButton.textContent='Download evidence bundle';evidenceButton.onclick=()=>{downloadEvidence(CVevidence.bundle(row));};item.append(evidenceButton);
+    if(row.evidence_valid)paragraph(item,'Receiver signed the recovered hash and chained it to the sender manifest.');
     const zone=document.createElement('p');zone.className='muted';zone.textContent='Dates shown in '+Intl.DateTimeFormat().resolvedOptions().timeZone+'. Device clocks are not trusted timestamp-authority evidence.';item.append(zone);
     if(row.sender_id===account.id){const del=document.createElement('button');del.className='secondary';del.textContent='Delete transfer';del.onclick=async()=>{try{await api('transfers/'+row.id,undefined,'DELETE');await refreshTransfers();notice('Transfer deleted.');}catch(error){notice(error.message,true);}};item.append(del);}parent.append(item);
   }
   renderSummary();
 }
-function renderSummary(){const summary=$('summary');summary.replaceChildren();for(const [name,value]of [['Your transfers',transfers.length],['Verified receipts',transfers.filter(t=>t.receipt).length],['Benchmark sizes',results.benchmarks?.rows?.length||0]]){const card=document.createElement('article');card.className='card';const h=document.createElement('h2');h.textContent=String(value);card.append(h);paragraph(card,name);summary.append(card);}}
+function renderSummary(){const summary=$('summary');summary.replaceChildren();for(const [name,value]of [['Your transfers',transfers.length],['Verified receipts',transfers.filter(t=>t.evidence_valid).length],['Benchmark sizes',results.benchmarks?.rows?.length||0]]){const card=document.createElement('article');card.className='card';const h=document.createElement('h2');h.textContent=String(value);card.append(h);paragraph(card,name);summary.append(card);}}
 async function initialise(){
   const value=await api('session');csrf=value.csrf;account=value.user;profile=value.profile;mode=value.mode;
   $('auth').hidden=!!account;$('workspace').hidden=!account;if(!account)return;page('dashboard');
   $('mode').textContent=mode==='local'?'Local account demo':'Hosted account workspace';$('account-label').textContent=profile?.username||account.email;$('identity-setup').hidden=!!profile;$('my-fingerprint').textContent=profile?.fingerprint||'Create your signing identity first.';
-  if(!value.ai_configured)$('ai-status').textContent='AI assistant is optional. Configure GEMINI_API_KEY on the server to enable real AI responses. All other features work without it.';
   results=(await api('results')).results;for(const [kind,value]of Object.entries(results))renderMeasurements(kind,value);renderVaultHistory();
   if(results.hash_metrics)$('hash-status').textContent='Saved hashing measurements:\n'+JSON.stringify(results.hash_metrics,null,2);
   if(results.signature_metrics)$('verify-status').textContent='Saved signature measurements:\n'+JSON.stringify(results.signature_metrics,null,2);
@@ -152,6 +251,9 @@ bind('send',async()=>{
   $('send-plaintext').textContent=C.preview(data);$('send-ciphertext').textContent=C.hex(C.parse(encrypted.package).cipher.slice(0,Math.min(data.length,256)))||'(empty plaintext)';$('send-signature').textContent=C.b64(signed.signature);
   $('send-status').textContent='File sent · awaiting recipient verification\nPublished (sender clock): '+formatStamp(manifest.published_at)+'\n'+metricResult(encrypted,'Encryption')+'\n'+timing('Package SHA-256',packageHash.seconds)+'\n'+timing('Signing-key unlock',unlock.seconds)+'\n'+timing('RSA-PSS signing (includes internal hashing)',signed.seconds)+'\n'+timing('Upload request + complete response',uploadSeconds)+'\n'+timing('Server signature verification',draft.server_signature_seconds)+'\n'+timing('Server signature prehash',draft.server_hash_seconds)+'\n'+timing('Complete preparation + upload + publish',C.seconds(start));await refreshTransfers();notice('Ciphertext sent. Share the password separately.');
 });
+
+bind('sign-evidence',async()=>{$('evidence-status').textContent='';try{const file=$('evidence-file').files[0];if(!file)throw Error('Choose an evidence bundle first.');if(file.size>50000)throw Error('Evidence bundle is too large.');const value=JSON.parse(await file.text());await CVevidence.verify(value);const unlock=await unlocked($('evidence-signing-password').value);const next=await CVevidence.appendVerifier(value,profile,unlock.key);await CVevidence.verify(next);downloadEvidence(next);$('evidence-status').textContent='Verification signed and chained. Download the updated bundle.';}finally{$('evidence-signing-password').value='';}});
+bind('verify-evidence',async()=>{$('evidence-status').textContent='';const file=$('evidence-file').files[0];if(!file)throw Error('Choose an evidence bundle JSON file.');if(file.size>50000)throw Error('Evidence bundle is too large.');const value=JSON.parse(await file.text()),result=await CVevidence.verify(value);$('evidence-status').textContent=(result.status==='verified-chain'?'Both transfer signatures and their chain verify. The signed receiver recovered-hash claim matches the manifest.':'Sender signature verifies; no signed receiver receipt is present.')+'\nVerifier signatures: '+result.verifiers+'\nSender fingerprint: '+value.sender.fingerprint+(value.receiver?'\nReceiver fingerprint: '+value.receiver.fingerprint:'')+'\nCompare fingerprints through a trusted channel; timestamps are device claims.';});
 bind('refresh-transfers',async()=>{await refreshTransfers();notice('Inbox and receipts refreshed.');});
 bind('receive',async()=>{
   for(const id of ['receive-status','receive-ciphertext','receive-plaintext','receive-signature'])$(id).textContent='';$('receive-download').replaceChildren();
@@ -169,9 +271,89 @@ bind('receive',async()=>{
   let recovered;try{recovered=await C.decrypt(packageBytes,$('receive-password').value);}finally{$('receive-password').value='';}
   const receiveSeconds=C.seconds(start),stamp=new Date().toISOString();download('receive-download',recovered.data,recovered.metadata.filename,'Download recovered file');$('receive-plaintext').textContent=C.preview(recovered.data);$('receive-signature').textContent=row.signature;
   $('receive-status').textContent='File successfully transferred and recovered\nRSA-PSS: VERIFIED against trusted signing fingerprint\nOriginal SHA-256: '+manifest.original_sha256+'\nRecovered SHA-256: '+recovered.sha256+'\nPublished (sender clock): '+formatStamp(manifest.published_at)+'\nRecovered (receiver clock): '+formatStamp(stamp)+'\n'+metricResult(recovered,'Decryption')+'\n'+timing('Signing public-key fingerprint SHA-256',publicHash.seconds)+'\n'+timing('Encrypted package SHA-256',packageHash.seconds)+'\n'+timing('RSA-PSS verification (includes import and hashing)',verified.seconds)+'\n'+timing('Download through complete response body',networkSeconds)+'\n'+timing('Total receive and recovery',receiveSeconds)+`\nNetwork throughput: ${(packageBytes.length/1e6/networkSeconds).toFixed(3)} MB/s (package bytes / 1,000,000 / network seconds)`;
-  if(row.status!=='verified')try{await api('transfers/'+row.id+'/receipt',{sha256:recovered.sha256,signature_valid:true,network_seconds:networkSeconds,decrypt_seconds:recovered.seconds,aes_seconds:recovered.aes_seconds,hash_seconds:recovered.hash_seconds,signature_seconds:verified.seconds,receive_seconds:receiveSeconds,recovered_at:stamp});}catch(error){$('receive-status').textContent+='\nRecovery succeeded; sender receipt could not be recorded: '+error.message;}
+  if(row.status!=='verified')try{const unlock=await unlocked($('receive-signing-password').value);const attestation=await CVevidence.receiptPayload(row,recovered.sha256,stamp),attestationMessage=te.encode(JSON.stringify(attestation)),receiptSignature=await C.sign(attestationMessage,unlock.key);await api('transfers/'+row.id+'/receipt',{sha256:recovered.sha256,signature_valid:true,network_seconds:networkSeconds,decrypt_seconds:recovered.seconds,aes_seconds:recovered.aes_seconds,hash_seconds:recovered.hash_seconds,signature_seconds:verified.seconds,receive_seconds:receiveSeconds,recovered_at:stamp,attestation_message:C.b64(attestationMessage),attestation_signature:C.b64(receiptSignature.signature)});$('receive-status').textContent+='\nReceiver chain-of-custody signature: recorded';}catch(error){$('receive-status').textContent+='\nRecovery succeeded; signed receipt could not be recorded: '+error.message;}finally{$('receive-signing-password').value='';}
   await refreshTransfers();notice('Recovery succeeded. Download the recovered file.');
 });
 document.querySelectorAll('[data-analysis]').forEach(button=>button.onclick=async()=>{const start=performance.now();button.disabled=true;try{notice('Running measured '+button.dataset.analysis+' experiment…');const data=button.dataset.analysis==='avalanche'?{block:$('analysis-block').value.trim()}:{},value=await api('analysis/'+button.dataset.analysis,data);results[button.dataset.analysis]=value.result;renderMeasurements(button.dataset.analysis,value.result);renderSummary();notice(timing('Analysis request + response',C.seconds(start)));}catch(error){notice(error.message+'\n'+timing('Elapsed until failure',C.seconds(start)),true);}finally{button.disabled=false;}});
-bind('ask',async()=>{const start=performance.now(),result=await api('ai',{question:$('ai-question').value});$('ai-status').textContent=result.answer+'\n\n'+timing('AI response latency (provider)',result.response_latency_seconds)+'\n'+timing('Complete assistant request latency',C.seconds(start));});
 initialise().catch(error=>{$('auth-status').textContent=error.message;notice(error.message,true);});
+
+let trafficCapture=null;
+function clearTraffic(){trafficCapture=null;$('traffic-results').hidden=true;$('traffic-file').value='';$('traffic-status').textContent='';$('traffic-search').value='';$('traffic-protocol').replaceChildren(new Option('All protocols',''));for(const id of ['traffic-summary','traffic-charts','traffic-radar','traffic-protocols','traffic-endpoints','traffic-packets'])$(id).replaceChildren();}
+function renderTrafficRadar(capture){
+  const parent=$('traffic-radar'),radar=CVtraffic.radar(capture);parent.replaceChildren();
+  const signals=document.createElement('div');signals.className='radar-grid';parent.append(signals);
+  for(const signal of radar.signals){const card=document.createElement('section');card.className='radar-signal';const heading=document.createElement('h3');heading.textContent=signal.name;const strong=document.createElement('strong');strong.textContent=signal.value;card.append(heading,strong);paragraph(card,signal.detail);signals.append(card);}
+  const heading=document.createElement('h3');heading.textContent='Observed activity bursts';parent.append(heading);
+  table(parent,radar.bursts.slice(0,20).map((burst,index)=>({burst:index+1,from_seconds:Number(burst.start.toFixed(3)),to_seconds:Number(burst.end.toFixed(3)),packets:burst.packets,frame_bytes:burst.frame_bytes,visible_peers:burst.peers.join(' ↔ ')})));
+  if(radar.bursts.length>20)paragraph(parent,`Showing the first 20 of ${radar.bursts.length} bursts.`);
+  if(radar.visibleRequests.length){const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='HTTP request text visible in the packet summary';details.append(summary);for(const request of radar.visibleRequests)paragraph(details,request);parent.append(details);}
+}
+function renderTrafficPackets(){
+  if(!trafficCapture)return;
+  const protocol=$('traffic-protocol').value,query=$('traffic-search').value.toLowerCase();
+  const rows=trafficCapture.packets.filter(p=>(!protocol||p.protocol===protocol)&&(!query||[p.source,p.destination,p.info].some(v=>v.toLowerCase().includes(query))));
+  $('traffic-count').textContent=`${rows.length.toLocaleString()} matching packets | showing first ${Math.min(rows.length,200)}. Charts summarise the complete imported CSV.`;
+  $('traffic-packets').replaceChildren();table($('traffic-packets'),rows.slice(0,200));
+}
+bind('traffic-analyse',async()=>{
+  const file=$('traffic-file').files[0];clearTraffic();
+  try{
+    if(!file)throw Error('Choose a Wireshark CSV first.');
+    if(file.size>10*1024*1024)throw Error('Choose a CSV smaller than 10 MiB.');
+    if(!file.name.toLowerCase().endsWith('.csv'))throw Error('Export your capture as CSV in Wireshark first.');
+    const capture=CVtraffic.analyse(await file.text());trafficCapture=capture;$('traffic-results').hidden=false;
+    for(const [label,value]of [['Packets',capture.packets.length.toLocaleString()],['Frame bytes',capture.bytes.toLocaleString()],['Capture span',capture.duration.toFixed(3)+' s']]){
+      const card=document.createElement('article');card.className='card';const heading=document.createElement('h2');heading.textContent=label;card.append(heading);paragraph(card,value);$('traffic-summary').append(card);
+    }
+    renderTrafficRadar(capture);
+    plot($('traffic-charts'),'Packet rate',[{name:'Packets / second',points:capture.timeline.map(b=>[b.seconds,b.packets/capture.binWidth])}],'Seconds from first imported packet','Packets / s');
+    plot($('traffic-charts'),'Traffic volume',[{name:'Frame bytes / second',points:capture.timeline.map(b=>[b.seconds,b.bytes/capture.binWidth])}],'Seconds from first imported packet','Bytes / s');
+    paragraph($('traffic-charts'),`Averages over fixed ${capture.binWidth}-second bins, including empty intervals. The last bin may be partial. Capture span is the time between the first and last imported packets.`);
+    table($('traffic-protocols'),capture.protocols);table($('traffic-endpoints'),capture.endpoints.slice(0,20));
+    for(const row of capture.protocols)$('traffic-protocol').append(new Option(row.protocol,row.protocol));renderTrafficPackets();
+    $('traffic-status').textContent=`${file.name} | ${capture.packets.length.toLocaleString()} packets analysed in this browser.`;
+  }catch(error){clearTraffic();$('traffic-status').textContent=error.message;}
+});
+bind('traffic-clear',async()=>clearTraffic());
+$('logout').addEventListener('click',clearTraffic);
+$('traffic-protocol').addEventListener('change',renderTrafficPackets);
+$('traffic-search').addEventListener('input',renderTrafficPackets);
+
+function getSavedTheme(){try{return localStorage.getItem('ciphervault_theme')||'system';}catch(e){return 'system';}}
+function applyTheme(choice){
+  try{localStorage.setItem('ciphervault_theme',choice);}catch(e){}
+  document.documentElement.setAttribute('data-theme',choice);
+  document.querySelectorAll('[data-theme-btn]').forEach(btn=>{
+    const active=btn.dataset.themeBtn===choice;
+    btn.classList.toggle('active',active);
+    btn.setAttribute('aria-checked',active?'true':'false');
+  });
+  const chip=$('theme-current-chip');
+  if(chip)chip.textContent=choice==='light'?'Light':choice==='dark'?'Dark':'Auto';
+  document.querySelectorAll('.chart-card').forEach(card=>{
+    chartDrawers.get(card)?.();
+  });
+}
+document.addEventListener('click',e=>{
+  const btn=e.target.closest('[data-theme-btn]');
+  if(btn)applyTheme(btn.dataset.themeBtn);
+});
+if(window.matchMedia){
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{
+    if(getSavedTheme()==='system'){
+      document.querySelectorAll('.chart-card').forEach(card=>chartDrawers.get(card)?.());
+    }
+  });
+}
+const themeCollapsible=$('theme-collapsible');
+if(themeCollapsible){
+  try{
+    if(localStorage.getItem('ciphervault_theme_collapsed')==='true'){
+      themeCollapsible.removeAttribute('open');
+    }
+  }catch(e){}
+  themeCollapsible.addEventListener('toggle',()=>{
+    try{localStorage.setItem('ciphervault_theme_collapsed',!themeCollapsible.open);}catch(e){}
+  });
+}
+applyTheme(getSavedTheme());

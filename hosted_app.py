@@ -19,7 +19,6 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 import crypto_service as crypto
-from ai_service import ask_assistant
 from analysis_service import confusion_diffusion, aes_length_analysis, password_length_analysis, hashing_resistance_analysis
 from benchmark_service import run_benchmarks
 from hosted_store import LocalAccounts, SupabaseAccounts, StoreError
@@ -185,7 +184,7 @@ def create_app(config=None):
         session.setdefault('csrf',secrets.token_urlsafe(32))
         token = session.get('access','')
         user = store.user(token) if token else None
-        return elapsed(user=user,csrf=session['csrf'],mode=store.mode,ai_configured=bool(os.getenv('GEMINI_API_KEY')),
+        return elapsed(user=user,csrf=session['csrf'],mode=store.mode,
                        profile=store.profile(token,user['id']) if user else None)
 
     @app.post('/api/register')
@@ -310,13 +309,28 @@ def create_app(config=None):
     def receipt(tid):
         record = transfer(tid,recipient=True)
         report = body()
-        fields = {'sha256','signature_valid','network_seconds','decrypt_seconds','aes_seconds','hash_seconds','signature_seconds','receive_seconds','recovered_at'}
+        fields = {'sha256','signature_valid','network_seconds','decrypt_seconds','aes_seconds','hash_seconds','signature_seconds','receive_seconds','recovered_at','attestation_message','attestation_signature'}
         if set(report)!=fields or report['sha256']!=record['manifest']['original_sha256'] or report['signature_valid'] is not True:
             raise ValueError('Receipt must report matching hashes and a verified signature.')
-        if any(type(report[k]) not in (int,float) or not math.isfinite(report[k]) or not 0<=report[k]<=3600 for k in fields-{'sha256','signature_valid','recovered_at'}):
+        if any(type(report[k]) not in (int,float) or not math.isfinite(report[k]) or not 0<=report[k]<=3600 for k in {'network_seconds','decrypt_seconds','aes_seconds','hash_seconds','signature_seconds','receive_seconds'}):
             raise ValueError('Invalid receipt timing.')
         if not isinstance(report['recovered_at'],str) or len(report['recovered_at'])>40 or dt.datetime.fromisoformat(report['recovered_at'].replace('Z','+00:00')).tzinfo is None:
             raise ValueError('Invalid recovery timestamp.')
+        recipient = store.profile(g.token,g.user['id'])
+        if not recipient:
+            raise ValueError('Create a signing identity before confirming recovery.')
+        signed_bytes = unbase64(report['attestation_message'],4096)
+        signature = unbase64(report['attestation_signature'],1024)
+        attestation = json.loads(signed_bytes)
+        expected = {'version':1,'transfer_id':tid,'recipient_id':g.user['id'],
+                    'manifest_sha256':hashlib.sha256(unbase64(record['message'])).hexdigest(),
+                    'sender_event_sha256':hashlib.sha256(unbase64(record['message'])+unbase64(record['signature'])).hexdigest(),
+                    'package_sha256':record['manifest']['package_sha256'],
+                    'recovered_sha256':report['sha256'],'recovered_at':report['recovered_at']}
+        if type(attestation) is not dict or attestation!=expected or not crypto.verify_file(signed_bytes,signature,load_der_public(unbase64(recipient['public_key'])))['valid']:
+            raise ValueError('Receiver signature does not bind this transfer and recovered hash.')
+        report['recipient_public_key'] = recipient['public_key']
+        report['recipient_fingerprint'] = recipient['fingerprint']
         report['recorded_at'] = utc_now().isoformat()
         store.receipt(g.token,tid,report)
         return elapsed(message='Receiver confirmation recorded.')
@@ -370,18 +384,6 @@ def create_app(config=None):
         value = safe_results(value)
         store.save_result(g.token,kind,value)
         return elapsed(result=value)
-
-    @app.post('/api/ai')
-    def ai():
-        value = body()
-        if store.mode=='local':
-            store.throttle('ai:'+g.user['id'],15)
-        else:
-            store.call('POST','/rest/v1/rpc/cv_compute_slot',g.token,{})
-        # Only stored numeric benchmark rows accompany an explicitly submitted question.
-        rows = store.results(g.token).get('benchmarks',{}).get('rows',[])
-        result = ask_assistant(value.get('question',''),rows)
-        return elapsed(answer=result.value,response_latency_seconds=result.seconds)
 
     return app
 

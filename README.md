@@ -11,6 +11,19 @@ for the account demo and deployment instructions. The online dashboard is hosted
 on Vercel, its Flask API runs on Render, and Supabase provides accounts and private
 storage. The original Streamlit app remains a separate local application.
 
+The account workspace now exports a chain-of-custody JSON bundle for each transfer.
+The sender signs the manifest; after recovery, the receiver signs a claim bound to that
+manifest and the recovered hash. The transfer page verifies both signatures offline
+and can append a verifier's signature. Fingerprints still need comparison through a
+trusted channel; device timestamps are claims, not trusted time certificates. The
+bundle can also be checked without an account or network using
+`.\.venv\Scripts\python.exe verify_evidence.py path\to\bundle.json`.
+The evidence contains hashes and public keys, not file contents or passwords. The
+Traffic analysis page also estimates visible addresses, activity bursts, frame volume,
+and HTTP request text from an imported Wireshark CSV. It does not infer exact file size
+or inspect encrypted contents. Existing hosted Supabase projects must run
+`supabase/receipt_attestation_migration.sql` before accepting new signed receipts.
+
 ## Install and launch (Windows PowerShell)
 
 ```powershell

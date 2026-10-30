@@ -102,9 +102,9 @@ declare t public.cv_transfers; field text;
 begin
   select * into t from public.cv_transfers where id=p_id and recipient_id=auth.uid() and status='sent' and expires_at>now() for update;
   if not found or jsonb_typeof(p_receipt)<>'object'
-     or not (p_receipt ?& array['sha256','signature_valid','network_seconds','decrypt_seconds','aes_seconds','hash_seconds','signature_seconds','receive_seconds','recovered_at','recorded_at'])
+     or not (p_receipt ?& array['sha256','signature_valid','network_seconds','decrypt_seconds','aes_seconds','hash_seconds','signature_seconds','receive_seconds','recovered_at','recorded_at','attestation_message','attestation_signature','recipient_public_key','recipient_fingerprint'])
      or p_receipt->>'sha256'<>t.manifest->>'original_sha256' or p_receipt->'signature_valid'<>'true'::jsonb
-     or (select count(*) from jsonb_object_keys(p_receipt))<>10 then raise exception 'Receipt denied'; end if;
+     or (select count(*) from jsonb_object_keys(p_receipt))<>14 then raise exception 'Receipt denied'; end if;
   foreach field in array array['network_seconds','decrypt_seconds','aes_seconds','hash_seconds','signature_seconds','receive_seconds'] loop
     if jsonb_typeof(p_receipt->field)<>'number' or (p_receipt->>field)::float8 not between 0 and 3600 then raise exception 'Invalid receipt timing'; end if;
   end loop;

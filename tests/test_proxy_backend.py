@@ -36,7 +36,9 @@ def test_static_build_contains_only_dashboard_files(tmp_path):
     (tmp_path/'private.key').write_text('must not be bundled')
     subprocess.run(['node',str(tmp_path/'build_frontend.cjs')],check=True,capture_output=True)
     files={str(p.relative_to(tmp_path/'frontend_dist')).replace('\\','/') for p in (tmp_path/'frontend_dist').rglob('*') if p.is_file()}
-    assert files=={'index.html','assets/app.js','assets/crypto.js','assets/style.css'}
+    expected={'index.html','assets/app.js','assets/crypto.js','assets/evidence.js','assets/traffic.js','assets/style.css'}
+    expected.add('assets/ciphervault_bg.jpg')
+    assert files==expected
     config=json.loads((root/'vercel.json').read_text())
     assert config['framework'] is None and 'functions' not in config
     assert any(r['source']=='/api/:path*' and '.onrender.com/api/' in r['destination'] for r in config['rewrites'])

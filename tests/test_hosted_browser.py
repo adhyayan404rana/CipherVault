@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import threading
 
 import pytest
@@ -33,5 +34,9 @@ def test_two_isolated_browser_accounts_and_all_core_workflows(tmp_path):
         assert result['success'] and result['browserErrors']==[] and result['encrypted']
         assert result['bytes']==len(demo.read_bytes())
         assert Path(artifacts['recovered']).read_bytes()==demo.read_bytes()
+        evidence=Path(artifacts['recovered']+'.evidence.json.signed.json')
+        offline=subprocess.run([sys.executable,str(ROOT/'verify_evidence.py'),str(evidence)],text=True,capture_output=True)
+        assert offline.returncode==0,offline.stderr
+        assert json.loads(offline.stdout.split('\nCompare the fingerprints')[0])['verifier_signatures']==1
     finally:
         server.shutdown();thread.join(timeout=5)
