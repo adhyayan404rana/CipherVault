@@ -66,6 +66,9 @@ changing the browser URL. The existing browser crypto, graphs, account UI,
 measured timings, transfers and private storage workflows remain the same.
 
 Render runs `server:app` with Gunicorn and `requirements-backend.txt`.
+The Vercel rewrites currently target the existing service at
+`https://ciphervault-streamlit.onrender.com`; deploy updates to that service, or
+change both rewrite destinations in `vercel.json` when using a different Render URL.
 `CIPHERVAULT_API_ONLY=true` disables serving dashboard assets there; its root
 returns API information. The previous separately hosted Streamlit laboratory is
 replaced by this backend. The old Render demo-access password is no longer used.
@@ -77,6 +80,8 @@ Run `supabase/schema.sql` once on a new Supabase project. Do not rerun it on the
 already configured project during migration. Accounts, encrypted signing keys,
 private ciphertext, receipts and numeric results remain in Supabase; migrating
 hosting does not copy or delete those records.
+For an existing project receiving signed chain-of-custody receipts, run
+`supabase/receipt_attestation_migration.sql` once in the Supabase SQL editor.
 
 Keep email/password authentication and email confirmation enabled. Set
 **Authentication > URL Configuration > Site URL** to
@@ -128,6 +133,16 @@ request can take about a minute to wake it. The static dashboard stays available
 but account/API operations wait for the backend. No continuous ping service is
 configured. A paid instance can avoid idle sleep. Supabase free projects may
 pause after low activity; restore through its dashboard if needed.
+
+If sign-in shows HTTP 429, do not redeploy solely because of that status. Check
+`https://ciphervault-alpha.vercel.app/health`: a healthy backend returns JSON
+with `status: ok`, `mode: supabase`, and `role: api`. A non-JSON 429 from
+`/api/login` is typically a rate limit before the Flask response. Check the
+request's response headers in browser DevTools, Vercel Firewall events, and
+Render service logs to identify which edge issued it. If Flask returns a JSON
+message about authentication requests, check Supabase Authentication logs and
+rate limits. Wait for the indicated `Retry-After` period before another login
+attempt; repeated attempts can prolong throttling.
 
 Transfer access expires after 24 hours; signed download URLs last 60 seconds.
 Expiry blocks new access but does not physically delete old ciphertext. Sender

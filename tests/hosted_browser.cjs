@@ -44,6 +44,13 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     await alice.waitForFunction(()=>document.getElementById('auth-status').textContent.includes('temporarily unavailable (HTTP 503)'));
     assert(!(await alice.locator('#auth-status').textContent()).includes('private upstream details'));
     await alice.unroute('**/api/login');
+    await alice.route('**/api/login',route=>route.fulfill({status:429,contentType:'text/html',headers:{'Retry-After':'30'},body:'private rate-limit details'}));
+    await alice.locator('#account-password').fill('browser account password 2026!');
+    await alice.locator('#login').click();
+    await alice.waitForFunction(()=>document.getElementById('auth-status').textContent.includes('Too many requests (HTTP 429)'));
+    assert((await alice.locator('#auth-status').textContent()).includes('Wait at least 30 seconds'));
+    assert(!(await alice.locator('#auth-status').textContent()).includes('private rate-limit details'));
+    await alice.unroute('**/api/login');
     await auth(alice,'alice@example.test','alice');await auth(bob,'bob@example.test','bob');
     await navigate(alice,'transfer');await alice.locator('#refresh-transfers').click();
     await alice.waitForFunction(()=>document.querySelectorAll('#recipient option').length===1);
@@ -154,7 +161,7 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
       await navigate(alice,'benchmark');
       const chart=alice.locator('#benchmarks-results svg.measurement-chart').first();
       const chartCard=alice.locator('#benchmarks-results .chart-card').first();
-      assert(Number((await chart.getAttribute('viewBox')).split(' ')[3])>=540);
+      await alice.waitForFunction(()=>{const value=document.querySelector('#benchmarks-results svg.measurement-chart')?.getAttribute('viewBox');return value&&Number(value.split(' ')[3])>=540;});
       const initialPoint=await chart.locator('circle').first().getAttribute('cx');
       await alice.waitForTimeout(250);
       assert.notEqual(await chart.locator('circle').first().getAttribute('cx'),initialPoint);

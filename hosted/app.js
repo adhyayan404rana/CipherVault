@@ -11,6 +11,7 @@ async function api(path,data,method){
   options.signal=AbortSignal.timeout(90000);
   let response;
   try{response=await fetch('/api/'+path,options);}catch(error){throw Error(error.name==='TimeoutError'?'The backend did not respond within 90 seconds. Wait a minute, refresh this page and try again.':'Could not reach the backend. Check your connection, wait a minute and refresh this page.');}
+  if(response.status===429){const retry=response.headers.get('Retry-After'),seconds=retry&&/^\d+$/.test(retry)?Number(retry):null;throw Error('Too many requests (HTTP 429). Sign-in is temporarily rate limited by the hosting or authentication service. '+(seconds&&seconds<=3600?`Wait at least ${seconds} seconds before trying again.`:'Wait a few minutes before trying again.')+' Repeated attempts can extend the limit. This does not mean your password is wrong.');}
   if(!response.headers.get('Content-Type')?.includes('application/json'))throw Error(`The backend is temporarily unavailable (HTTP ${response.status}). It may be waking up or a proxy request failed. Wait a minute, refresh this page and try again. This response does not indicate an incorrect password.`);
   let value;
   try{value=await response.json();}catch(error){throw Error('The backend returned an invalid API response. Refresh this page and try again.');}
