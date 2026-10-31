@@ -27,6 +27,14 @@ def test_confusion_diffusion_measurements():
         assert sum(mask) == first['changed_output_bits']
     assert result.value['rows'][7]['flipped_bit'] == 127
     assert result.value['rows'][-1]['flipped_bit'] == 255
+    for row, trial in zip(result.value['rows'], result.value['trials']):
+        baseline = bytes.fromhex(result.value['baseline_hex'])
+        output = bytes.fromhex(trial['output_hex'])
+        assert bit_distance(baseline, output) == row['changed_output_bits']
+        assert trial['changed_bytes'] == sum(a != b for a,b in zip(baseline, output))
+        assert row['changed_hex_characters'] == sum(a != b for a,b in zip(baseline.hex(), output.hex()))
+        assert row['changed_hex_percent'] == row['changed_hex_characters']/32*100
+        assert trial['flipped_bit'] == row['flipped_bit']
     assert 'key' not in result.value
 
 

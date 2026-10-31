@@ -39,6 +39,7 @@ def confusion_diffusion(block, samples=32):
         baseline = measured(_block_encrypt, key, block)
         rows = []
         masks = {}
+        trials = []
         for kind, maximum in [('Plaintext bit flip', 127), ('Key bit flip', 255)]:
             for index in range(samples):
                 bit = round(index*maximum/(samples-1))
@@ -46,11 +47,18 @@ def confusion_diffusion(block, samples=32):
                 changed_key = flip_bit(key, bit) if kind == 'Key bit flip' else key
                 output = measured(_block_encrypt, changed_key, changed_input)
                 changed = bit_distance(baseline.value, output.value)
+                changed_hex = sum(a != b for a, b in zip(baseline.value.hex(), output.value.hex()))
                 rows.append({'experiment':kind, 'flipped_bit':bit, 'changed_output_bits':changed,
-                             'changed_percent':changed/128*100, 'encryption_ms':output.seconds*1000})
+                             'changed_percent':changed/128*100,
+                             'changed_hex_characters':changed_hex,
+                             'changed_hex_percent':changed_hex/32*100,
+                             'encryption_ms':output.seconds*1000})
+                trials.append({'experiment':kind, 'flipped_bit':bit,
+                               'output_hex':output.value.hex(),
+                               'changed_bytes':sum(x != y for x,y in zip(baseline.value,output.value))})
                 if index == 0:
                     masks[kind] = [(x ^ y) >> k & 1 for x, y in zip(baseline.value, output.value) for k in range(8)]
-        return {'rows':rows, 'first_trial_masks':masks, 'baseline_hex':baseline.value.hex(),
+        return {'rows':rows, 'trials':trials, 'input_hex':block.hex(), 'first_trial_masks':masks, 'baseline_hex':baseline.value.hex(),
                 'baseline_encryption_seconds':baseline.seconds, 'key_setup_seconds':key_setup.seconds}
     return measured(work)
 
