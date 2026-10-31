@@ -176,7 +176,7 @@ new MutationObserver(records=>{for(const record of records)for(const node of rec
 
 function renderMeasurements(kind,value,target=null){
   if(kind==='hash_resistance'&&!target&&$('integrity-resistance-results'))renderMeasurements(kind,value,$('integrity-resistance-results'));
-  const parent=target||$(kind+'-results');if(!parent)return;parent.replaceChildren();paragraph(parent,timing('Total measured analysis (Python server)',value.total_seconds));
+  const parent=target||$(kind+'-results');if(!parent)return;parent.replaceChildren();if(kind!=='avalanche')paragraph(parent,timing('Total measured analysis (Python server)',value.total_seconds));
   const rows=value.rows||[];
   if(kind==='benchmarks'){
     const configurations=[['AES encryption vs plaintext size','aes_encrypt_ms','Encryption','Duration (ms)'],['AES decryption vs plaintext size','aes_decrypt_ms','Decryption','Duration (ms)'],['SHA-256 vs plaintext size','sha256_ms','SHA-256','Duration (ms)'],['AES throughput vs plaintext size','aes_encrypt_MB_s','Encryption','Throughput (MB/s)']];
@@ -191,17 +191,20 @@ function renderMeasurements(kind,value,target=null){
     const fixed=rows.filter(r=>r.size_bytes===1024*1024);plot(parent,'AES key length at fixed 1 MiB plaintext',[{name:'Encryption',points:fixed.map(r=>[r.key_bits,r.encrypt_ms])},{name:'Decryption',points:fixed.map(r=>[r.key_bits,r.decrypt_ms])}],'Key length (bits)','Median AES duration (ms)');paragraph(parent,'Analysis-only AES-128/192/256 comparison. File vault and transfer always use AES-256. Larger keys use more rounds, while hardware acceleration and measurement noise affect runtime.');
   }else if(kind==='avalanche'){
     const levels=document.createElement('div');levels.className='transfer-avalanche-levels';parent.append(levels);
-    for(const [experiment,label,description] of [['Plaintext bit flip','Diffusion level','One plaintext bit changed'],['Key bit flip','Confusion level (key sensitivity)','One AES-256 key bit changed']]){
+    for(const [experiment,label] of [['Plaintext bit flip','Diffusion · plaintext bit flip'],['Key bit flip','Confusion · key bit flip']]){
       const samples=rows.filter(row=>row.experiment===experiment);
       if(!samples.length)continue;
-      const mean=samples.reduce((sum,row)=>sum+row.changed_percent,0)/samples.length;
-      const card=document.createElement('section'),heading=document.createElement('h3'),figure=document.createElement('strong'),detail=document.createElement('p');
-      heading.textContent=label;figure.textContent=mean.toFixed(1)+'%';detail.textContent=description+' · mean of '+samples.length+' trials · '+(mean*128/100).toFixed(1)+' of 128 output bits changed on average';
-      card.append(heading,figure,detail);levels.append(card);
+      const card=document.createElement('section'),heading=document.createElement('h3');heading.textContent=label;card.append(heading);
+      for(const [field,metric,ideal] of [['changed_percent','Bit-level avalanche','50%'],['changed_hex_percent','Character-level change','100%']]){
+        const mean=samples.reduce((sum,row)=>sum+row[field],0)/samples.length;
+        const item=document.createElement('div'),figure=document.createElement('strong'),detail=document.createElement('p');
+        item.className='transfer-avalanche-metric';figure.textContent=mean.toFixed(1)+'%';detail.textContent=metric+' · ideal '+ideal;
+        item.append(figure,detail);card.append(item);
+      }
+      levels.append(card);
     }
-    window.CVLab.render(parent,value);
-    plot(parent,'Single-bit changes vs ciphertext changes',['Plaintext bit flip','Key bit flip'].map(experiment=>({name:experiment,points:rows.filter(r=>r.experiment===experiment).map(r=>[r.flipped_bit,r.changed_percent])})),'Flipped bit position','Changed output bits (%)');
-    paragraph(parent,timing('Random key setup',value.key_setup_seconds)+'\n'+timing('Baseline block encryption',value.baseline_encryption_seconds)+'\nPlaintext bit flips illustrate diffusion; key bit flips illustrate key sensitivity. This isolated single-block experiment never reuses GCM nonces. A small experiment does not prove security or guarantee 50% changes.');
+    paragraph(parent,'Measured averages across 32 one-bit trials per experiment. Character-level means changes among the 32 displayed ciphertext hex characters. Ideal values are references; actual measurements vary.');
+    return;
   }else if(kind==='hash_resistance'){
     for(const field of ['median_attempts_used','median_search_ms']){plot(parent,field==='median_search_ms'?'Truncated SHA-256 search time':'Truncated SHA-256 attempts',['Preimage','Second preimage','Collision'].map(property=>({name:property,points:value.toy.filter(r=>r.property===property).map(r=>[r.retained_bits,r[field]])})),'Retained digest bits',field==='median_search_ms'?'Duration (ms)':'Attempts used');paragraph(parent,field==='median_search_ms'?'Actual median search times for deliberately shortened 8-, 12- and 16-bit digest prefixes. Timing varies with hardware and which candidates are found.':'Attempts used, capped by the search budget. Collision searches can match any two distinct candidates; preimage searches must match a fixed target. Capped searches may finish without finding a match.');}
     plot(parent,'Full SHA-256 · bounded search attempts',value.full.map((r,index)=>({name:r.property,points:[[index+1,r.attempts]]})),'Experiment index','Attempts used');
@@ -211,11 +214,7 @@ function renderMeasurements(kind,value,target=null){
     paragraph(parent,'Preimage: search for input matching a target digest. Second preimage: search for another input matching an existing file digest. Collision: search for any two distinct inputs sharing a digest. Truncated prefixes are deliberately weaker; failed budget-limited searches do not prove SHA-256 resistance. The theoretical graph shows generic work estimates, not experimental results.');
     table(parent,value.full.map(r=>({property:r.property,attempts:r.attempts,found:r.found,elapsed_ms:r.seconds*1000,hash_ms:r.hash_seconds*1000})));table(parent,value.toy);csv(parent,value.toy,kind);return;
   }
-  if(kind==='avalanche'){
-    const details=document.createElement('details'),summary=document.createElement('summary');
-    summary.textContent='Inspect all 64 measurements & export CSV';details.append(summary);parent.append(details);
-    table(details,rows);csv(details,rows,kind);
-  }else{table(parent,rows);csv(parent,rows,kind);}
+  table(parent,rows);csv(parent,rows,kind);
 }
 function renderVaultHistory(){const parent=$('vault-history');parent.replaceChildren();const rows=results.vault_metrics?.rows||[];if(!rows.length)return;plot(parent,'Your measured AES file operations',['Encryption','Decryption'].map(operation=>({name:operation,points:rows.filter(r=>r.operation===operation).map(r=>[r.size_bytes/1024,r.aes_ms]).sort((a,b)=>a[0]-b[0])})),'Original size (KiB)','AES duration (ms)');table(parent,rows);csv(parent,rows,'vault-operations');}
 async function vaultMetric(result,operation){const rows=[...(results.vault_metrics?.rows||[]),{operation,size_bytes:result.metadata.size,key_method:result.metadata.kdf==='RAW-KEY'?'Key file':'Password',aes_ms:result.aes_seconds*1000,hash_ms:result.hash_seconds*1000,workflow_ms:result.seconds*1000}].slice(-100);await save('vault_metrics',{rows});renderVaultHistory();}

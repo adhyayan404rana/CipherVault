@@ -160,18 +160,17 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     await navigate(alice,'transfer');
     assert.equal(await alice.locator('#page-analysis [data-analysis="avalanche"]').count(),0);
     await alice.locator('#page-transfer [data-analysis="avalanche"]').click();
-    await alice.locator('#avalanche-results svg.measurement-chart').first().waitFor();
-    assert.equal(await alice.locator('#avalanche-results svg.measurement-chart').count(),1);
-    assert((await alice.locator('.transfer-avalanche-levels').textContent()).includes('Diffusion level'));
-    assert((await alice.locator('.transfer-avalanche-levels').textContent()).includes('Confusion level'));
-    assert.equal(await alice.locator('.bit-map .bit').count(),128);
-    const hexChanged=await alice.locator('.lab-stats').textContent();
-    assert(hexChanged.includes('Hex characters changed'));
-    const hexPercent=Number((await alice.locator('.lab-stats').textContent()).match(/([0-9.]+)%Hex characters changed/)[1]);
-    assert(hexPercent>=0&&hexPercent<=100);
-    await alice.locator('.lab-controls select').selectOption({label:'Key bit flip'});
-    await alice.locator('.lab-controls input').fill('5');
-    assert((await alice.locator('.avalanche-panel').textContent()).includes('Trial 6 of 32'));
+    await alice.locator('#avalanche-results .transfer-avalanche-levels section').first().waitFor();
+    assert.equal(await alice.locator('#avalanche-results .transfer-avalanche-levels section').count(),2);
+    assert.equal(await alice.locator('#avalanche-results svg, #avalanche-results canvas, #avalanche-results .avalanche-panel').count(),0);
+    for(const card of await alice.locator('#avalanche-results .transfer-avalanche-levels section').all()){
+      const text=await card.textContent();
+      assert(text.includes('Bit-level avalanche · ideal 50%'));
+      assert(text.includes('Character-level change · ideal 100%'));
+      const values=await card.locator('strong').allTextContents();
+      assert.equal(values.length,2);
+      assert(values.every(value=>Number(value.replace('%',''))>=0&&Number(value.replace('%',''))<=100));
+    }
     await navigate(alice,'analysis');
     await alice.locator('#challenge-text').fill('Transfer ?500 to Alice ??');
     await alice.locator('#challenge-run').click();
