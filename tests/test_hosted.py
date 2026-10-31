@@ -191,3 +191,4 @@ def test_hosted_analysis_runs_real_measurements_without_ai_key(web,monkeypatch):
     assert 'avalanche' in client.get('/api/results').json['results']
     assert post(client,'ai',{'question':'Explain AES-GCM'}).status_code==404
     assert client.get('/health').status_code==200
+    assert client.get('/health').json['hash_resistance_samples']==20

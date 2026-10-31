@@ -25,6 +25,7 @@ from hosted_store import LocalAccounts, SupabaseAccounts, StoreError
 
 ROOT = Path(__file__).parent
 RESULT_KINDS = {'benchmarks','avalanche','lengths','password_lengths','hash_resistance','vault_metrics','hash_metrics','signature_metrics'}
+HASH_SAMPLE_COUNT = 20
 
 
 def utc_now():
@@ -177,7 +178,7 @@ def create_app(config=None):
 
     @app.get('/health')
     def health():
-        return jsonify(status='ok',mode=store.mode,role='api' if api_only else 'web')
+        return jsonify(status='ok',mode=store.mode,role='api' if api_only else 'web',hash_resistance_samples=HASH_SAMPLE_COUNT)
 
     @app.get('/api/session')
     def current_session():
@@ -377,7 +378,7 @@ def create_app(config=None):
             result = password_length_analysis()
             value = {**result.value,'total_seconds':result.seconds}
         elif kind=='hash_resistance':
-            result = hashing_resistance_analysis(attempts=5000,repeats=3,sample_count=20)
+            result = hashing_resistance_analysis(attempts=5000,repeats=3,sample_count=HASH_SAMPLE_COUNT)
             value = {**result.value,'total_seconds':result.seconds}
         else:
             abort(404)
