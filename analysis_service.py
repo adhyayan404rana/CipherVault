@@ -167,10 +167,12 @@ def _search(property_name, bits, limit, target, original, progress=False):
             'hash_seconds':hash_seconds, 'witness':witness,'progress':trace}
 
 
-def hashing_resistance_analysis(original=b'CipherVault hash analysis', attempts=20_000, repeats=3):
+def hashing_resistance_analysis(original=b'CipherVault hash analysis', attempts=20_000, repeats=3, sample_count=0):
     def work():
-        if not isinstance(original, bytes) or len(original) > 4096 or type(attempts) is not int or not 1 <= attempts <= 50_000 or type(repeats) is not int or not 1 <= repeats <= 5:
-            raise ValueError('Use at most 4096 input bytes, 1–50,000 attempts and 1–5 repeats.')
+        if (not isinstance(original, bytes) or len(original) > 4096 or type(attempts) is not int
+                or not 1 <= attempts <= 50_000 or type(repeats) is not int or not 1 <= repeats <= 5
+                or type(sample_count) is not int or not 0 <= sample_count <= 20):
+            raise ValueError('Use at most 4096 input bytes, 1–50,000 attempts, 1–5 repeats and up to 20 sample values.')
         pre_input = os.urandom(32)
         pre_target = measured(lambda: hashlib.sha256(pre_input).digest())
         second_target = measured(lambda: hashlib.sha256(original).digest())
@@ -189,8 +191,31 @@ def hashing_resistance_analysis(original=b'CipherVault hash analysis', attempts=
                             'median_search_ms':statistics.median(t['seconds'] for t in trials)*1000,
                             'median_hash_ms':statistics.median(t['hash_seconds'] for t in trials)*1000,
                             'trials':trials})
+        sample_hashes = []
+        sample_trials = []
+        seen_inputs = set()
+        for index in range(1, sample_count+1):
+            sample = os.urandom(16)
+            while sample in seen_inputs:
+                sample = os.urandom(16)
+            seen_inputs.add(sample)
+            digest = hashlib.sha256(sample).digest()
+            sample_hashes.append({'sample':index,'value_hex':sample.hex(),'sha256':digest.hex()})
+            for kind in properties:
+                trial = _search(kind,256,attempts,digest,sample)
+                sample_trials.append({'sample':index,'property':kind,'attempts':trial['attempts'],
+                                      'found':trial['found'],'search_ms':trial['seconds']*1000,
+                                      'hash_ms':trial['hash_seconds']*1000})
+        sample_summary = [{'property':kind,'samples':sample_count,
+                           'matches':sum(row['found'] for row in sample_trials if row['property']==kind),
+                           'mean_attempts_used':statistics.mean(row['attempts'] for row in sample_trials if row['property']==kind),
+                           'mean_search_ms':statistics.mean(row['search_ms'] for row in sample_trials if row['property']==kind)}
+                          for kind in properties] if sample_count else []
         return {'full':full,'toy':toy,'budget':attempts,'target_hash_seconds':pre_target.seconds+second_target.seconds,
                 'original_sha256':second_target.value.hex(),
+                'sample_hashes':sample_hashes,'sample_trials':sample_trials,'sample_summary':sample_summary,
+                'sample_hash_collisions':sum(a['sha256']==b['sha256'] for i,a in enumerate(sample_hashes)
+                                              for b in sample_hashes[i+1:]),
                 'theory':[{'property':'Preimage','log2_generic_work':256},
                           {'property':'Second preimage','log2_generic_work':256},
                           {'property':'Collision','log2_generic_work':128}]}

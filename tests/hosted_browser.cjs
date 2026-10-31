@@ -154,9 +154,12 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     await alice.locator('#verify-file').setInputFiles(input.changed);await alice.locator('#verify').click();await alice.waitForFunction(()=>document.getElementById('verify-status').textContent.includes('FAILED'));
     await alice.locator('#page-integrity [data-analysis="hash_resistance"]').click();
     await alice.locator('#integrity-resistance-results svg.measurement-chart').first().waitFor({timeout:45000});
-    assert.equal(await alice.locator('#integrity-resistance-results svg.measurement-chart').count(),4);
+    assert.equal(await alice.locator('#integrity-resistance-results svg.measurement-chart').count(),6);
+    assert((await alice.locator('#integrity-resistance-results').textContent()).includes('20 generated values were hashed'));
+    assert.equal(await alice.locator('#integrity-resistance-results .chart-card').filter({hasText:'20 SHA-256 trials · bounded attempts'}).locator('circle.chart-point').count(),60);
+    assert((await alice.locator('#integrity-resistance-results').textContent()).includes('2^256'));
     assert((await alice.locator('#integrity-resistance-results').textContent()).includes('does not prove resistance'));
-    assert.equal(await alice.locator('#hash_resistance-results svg.measurement-chart').count(),4);
+    assert.equal(await alice.locator('#hash_resistance-results svg.measurement-chart').count(),6);
     await navigate(alice,'transfer');
     assert.equal(await alice.locator('#page-analysis [data-analysis="avalanche"]').count(),0);
     await alice.locator('#page-transfer [data-analysis="avalanche"]').click();

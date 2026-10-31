@@ -1,3 +1,4 @@
+import hashlib
 import math
 import pytest
 from analysis_service import (flip_bit, bit_distance, confusion_diffusion, aes_length_analysis,
@@ -87,6 +88,24 @@ def test_bounded_full_hash_and_prefix_trials():
                     assert witness['left_message_hex'] != witness['right_message_hex']
             else:
                 assert trial['attempts'] == 300 and trial['witness'] is None
+
+
+def test_twenty_full_sha256_targets_and_bounded_trial_averages():
+    result = hashing_resistance_analysis(attempts=20, repeats=1, sample_count=20).value
+    assert len(result['sample_hashes']) == 20
+    assert len({row['value_hex'] for row in result['sample_hashes']}) == 20
+    assert all(hashlib.sha256(bytes.fromhex(row['value_hex'])).hexdigest() == row['sha256']
+               for row in result['sample_hashes'])
+    assert result['sample_hash_collisions'] == sum(a['sha256'] == b['sha256']
+        for i,a in enumerate(result['sample_hashes']) for b in result['sample_hashes'][i+1:])
+    assert len(result['sample_trials']) == 60
+    for summary in result['sample_summary']:
+        trials = [row for row in result['sample_trials'] if row['property'] == summary['property']]
+        assert len(trials) == summary['samples'] == 20
+        assert summary['matches'] == sum(row['found'] for row in trials)
+        assert summary['mean_attempts_used'] == sum(row['attempts'] for row in trials)/20
+        assert all(1 <= row['attempts'] <= 20 for row in trials)
+    assert [row['log2_generic_work'] for row in result['theory']] == [256, 256, 128]
 
 
 def test_prefix_collision_is_actual_distinct_inputs():

@@ -377,7 +377,7 @@ def create_app(config=None):
             result = password_length_analysis()
             value = {**result.value,'total_seconds':result.seconds}
         elif kind=='hash_resistance':
-            result = hashing_resistance_analysis(attempts=5000,repeats=3)
+            result = hashing_resistance_analysis(attempts=5000,repeats=3,sample_count=20)
             value = {**result.value,'total_seconds':result.seconds}
         else:
             abort(404)
