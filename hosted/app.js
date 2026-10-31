@@ -213,6 +213,8 @@ function renderMeasurements(kind,value,target=null){
       paragraph(parent,'Each point shows actual attempts used, up to 5,000. A point at the budget is an exhausted search unless its result says a match was found. The mean below is the average attempted work within this cap, not the work needed to break SHA-256.');
       plot(parent,'20 SHA-256 trials · measured search time',properties.map(property=>({name:property,points:value.sample_trials.filter(r=>r.property===property).map(r=>[r.sample,r.search_ms])})),'Generated value number','Search duration (ms)');
       table(parent,value.sample_summary);
+    }else{
+      paragraph(parent,'The 20-value SHA-256 comparison is not available from the analysis service yet. The charts below show the earlier bounded experiment.');
     }
     for(const field of ['median_attempts_used','median_search_ms']){plot(parent,field==='median_search_ms'?'Truncated SHA-256 search time':'Truncated SHA-256 attempts',['Preimage','Second preimage','Collision'].map(property=>({name:property,points:value.toy.filter(r=>r.property===property).map(r=>[r.retained_bits,r[field]])})),'Retained digest bits',field==='median_search_ms'?'Duration (ms)':'Attempts used');paragraph(parent,field==='median_search_ms'?'Actual median search times for deliberately shortened 8-, 12- and 16-bit digest prefixes. Timing varies with hardware and which candidates are found.':'Attempts used, capped by the search budget. Collision searches can match any two distinct candidates; preimage searches must match a fixed target. Capped searches may finish without finding a match.');}
     plot(parent,'Full SHA-256 · bounded search attempts',value.full.map((r,index)=>({name:r.property,points:[[index+1,r.attempts]]})),'Experiment index','Attempts used');
