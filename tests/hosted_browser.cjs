@@ -57,6 +57,11 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     const fingerprint=(await alice.locator('#my-fingerprint').textContent()).trim();
     await alice.locator('#send-file').setInputFiles(input.demo);
     await alice.locator('#send-password').fill('separate browser file password!');
+    await alice.locator('#send-signing-password').fill('incorrect signing passphrase!');
+    await alice.locator('#send').click();
+    await alice.waitForFunction(()=>document.getElementById('send-status').textContent.includes('Signing-key passphrase is incorrect'));
+    assert.equal(await alice.locator('#transfer-list .transfer-item').count(),0);
+    await alice.locator('#send-password').fill('separate browser file password!');
     await alice.locator('#send-signing-password').fill('separate browser signing password!');
     await alice.locator('#send').click();
     await alice.waitForFunction(()=>document.getElementById('send-status').textContent.includes('File sent'));
