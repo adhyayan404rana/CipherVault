@@ -1048,6 +1048,12 @@ pre { line-height: 1.65; }
 .workspace-banner button { flex-shrink:0; }
 .lab-empty { text-align:center; padding:48px 20px; margin-top:24px; border:1px dashed var(--line); border-radius:12px; color:var(--accent); }
 .lab-empty span { font-size:13px; color:var(--muted); }
+.transfer-avalanche-levels { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:24px 0; }
+.transfer-avalanche-levels section { min-width:0; padding:20px; border:1px solid var(--line); border-radius:12px; background:var(--input-bg); }
+.transfer-avalanche-levels h3 { margin:0 0 10px; }
+.transfer-avalanche-levels strong { display:block; color:var(--accent); font-size:clamp(28px,4vw,42px); line-height:1.1; }
+.transfer-avalanche-levels p { margin:10px 0 0; color:var(--muted); }
+@media(max-width:700px) { .transfer-avalanche-levels { grid-template-columns:1fr; } }
 .avalanche-panel { padding:24px; background:var(--input-bg); border:1px solid var(--line); border-radius:12px; margin:24px 0; }
 .lab-controls { display:flex; flex-wrap:wrap; gap:20px; align-items:end; }
 .lab-controls label { flex:1; min-width:180px; margin:0; }

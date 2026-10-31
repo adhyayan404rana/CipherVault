@@ -157,9 +157,13 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     assert.equal(await alice.locator('#integrity-resistance-results svg.measurement-chart').count(),4);
     assert((await alice.locator('#integrity-resistance-results').textContent()).includes('does not prove resistance'));
     assert.equal(await alice.locator('#hash_resistance-results svg.measurement-chart').count(),4);
-    await navigate(alice,'analysis');await alice.locator('[data-analysis="avalanche"]').click();
+    await navigate(alice,'transfer');
+    assert.equal(await alice.locator('#page-analysis [data-analysis="avalanche"]').count(),0);
+    await alice.locator('#page-transfer [data-analysis="avalanche"]').click();
     await alice.locator('#avalanche-results svg.measurement-chart').first().waitFor();
     assert.equal(await alice.locator('#avalanche-results svg.measurement-chart').count(),1);
+    assert((await alice.locator('.transfer-avalanche-levels').textContent()).includes('Diffusion level'));
+    assert((await alice.locator('.transfer-avalanche-levels').textContent()).includes('Confusion level'));
     assert.equal(await alice.locator('.bit-map .bit').count(),128);
     const hexChanged=await alice.locator('.lab-stats').textContent();
     assert(hexChanged.includes('Hex characters changed'));
@@ -168,6 +172,7 @@ async function saveDownload(page,selector,path){const promise=page.waitForEvent(
     await alice.locator('.lab-controls select').selectOption({label:'Key bit flip'});
     await alice.locator('.lab-controls input').fill('5');
     assert((await alice.locator('.avalanche-panel').textContent()).includes('Trial 6 of 32'));
+    await navigate(alice,'analysis');
     await alice.locator('#challenge-text').fill('Transfer ?500 to Alice ??');
     await alice.locator('#challenge-run').click();
     await alice.locator('.challenge-verdict').waitFor();

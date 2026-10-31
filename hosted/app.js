@@ -190,6 +190,15 @@ function renderMeasurements(kind,value,target=null){
     for(const [field,label]of [['encrypt_ms','Encryption'],['decrypt_ms','Decryption']])plot(parent,label+' vs plaintext size',[128,192,256].map(bits=>({name:'AES-'+bits,points:rows.filter(r=>r.key_bits===bits).map(r=>[r.size_KiB,r[field]])})),'Plaintext size (KiB)','Median AES duration (ms)');
     const fixed=rows.filter(r=>r.size_bytes===1024*1024);plot(parent,'AES key length at fixed 1 MiB plaintext',[{name:'Encryption',points:fixed.map(r=>[r.key_bits,r.encrypt_ms])},{name:'Decryption',points:fixed.map(r=>[r.key_bits,r.decrypt_ms])}],'Key length (bits)','Median AES duration (ms)');paragraph(parent,'Analysis-only AES-128/192/256 comparison. File vault and transfer always use AES-256. Larger keys use more rounds, while hardware acceleration and measurement noise affect runtime.');
   }else if(kind==='avalanche'){
+    const levels=document.createElement('div');levels.className='transfer-avalanche-levels';parent.append(levels);
+    for(const [experiment,label,description] of [['Plaintext bit flip','Diffusion level','One plaintext bit changed'],['Key bit flip','Confusion level (key sensitivity)','One AES-256 key bit changed']]){
+      const samples=rows.filter(row=>row.experiment===experiment);
+      if(!samples.length)continue;
+      const mean=samples.reduce((sum,row)=>sum+row.changed_percent,0)/samples.length;
+      const card=document.createElement('section'),heading=document.createElement('h3'),figure=document.createElement('strong'),detail=document.createElement('p');
+      heading.textContent=label;figure.textContent=mean.toFixed(1)+'%';detail.textContent=description+' · mean of '+samples.length+' trials · '+(mean*128/100).toFixed(1)+' of 128 output bits changed on average';
+      card.append(heading,figure,detail);levels.append(card);
+    }
     window.CVLab.render(parent,value);
     plot(parent,'Single-bit changes vs ciphertext changes',['Plaintext bit flip','Key bit flip'].map(experiment=>({name:experiment,points:rows.filter(r=>r.experiment===experiment).map(r=>[r.flipped_bit,r.changed_percent])})),'Flipped bit position','Changed output bits (%)');
     paragraph(parent,timing('Random key setup',value.key_setup_seconds)+'\n'+timing('Baseline block encryption',value.baseline_encryption_seconds)+'\nPlaintext bit flips illustrate diffusion; key bit flips illustrate key sensitivity. This isolated single-block experiment never reuses GCM nonces. A small experiment does not prove security or guarantee 50% changes.');
